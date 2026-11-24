@@ -1,0 +1,13 @@
+{
+  "name": "gold-miner-online",
+  "version": "1.0.0",
+  "description": "黄金矿工对抗赛 · 服务器权威联机版（本地联调 demo）",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "socket.io": "^4.7.5",
+    "socket.io-client": "^4.8.4"
+  }
+}
