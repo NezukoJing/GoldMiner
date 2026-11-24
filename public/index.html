@@ -779,15 +779,26 @@ function hydrate(s) {
 }
 
 /* ---------------- UI 状态机 ---------------- */
+let lastShopSig = '';
+function shopSig(s) {
+  const sh = s && s.shop;
+  if (!sh) return '';
+  const wallets = (s.players || []).map(p => p.wallet).join(',');
+  const sold = sh.offers.map(o => o.soldTo).join(',');
+  return [sh.turn, sh.order.join(','), sold, wallets,
+    sh.order.map(idx => sh.log[idx] || '').join('|')].join('#');
+}
 function syncUI(s) {
   if (s.phase !== lastUIPhase) {
     const prev = lastUIPhase; lastUIPhase = s.phase;
     if (['countdown', 'play', 'roundEnd'].includes(s.phase)) hideOv();
     if (s.phase === 'result') renderResultUI();
-    else if (s.phase === 'shop') renderShopUI();
+    else if (s.phase === 'shop') { lastShopSig = shopSig(s); renderShopUI(); }
     else if (s.phase === 'final') renderFinalUI();
   } else if (s.phase === 'shop') {
-    renderShopUI(); // 选购过程实时刷新
+    // 只在选购状态真正变化时重建，避免每帧重建导致按钮 click 丢失
+    const sig = shopSig(s);
+    if (sig !== lastShopSig) { lastShopSig = sig; renderShopUI(); }
   }
 }
 function toast(text) {
