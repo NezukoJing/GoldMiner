@@ -597,56 +597,6 @@ const KEYS = { '1v1': KEYS1, '2v2': KEYS2 };
 let prevSnap = null, currSnap = null, prevAt = 0, currAt = 0;
 let lastUIPhase = '', lastUIRound = -1, reconnected = false;
 
-/* ---------------- 本地预测：fire 即时反馈（方案A） ----------------
- * 只预测“自己的 fire”：按下即本地伸钩，服务器权威快照到达后平滑收敛。
- * 不预测 bomb / 抓取 / 计分——这些完全以服务器为准，避免权威冲突。
- * state 机：
- *   auth.state==='swing'  -> 服务器尚未确认，完全本地预测伸钩
- *   auth.state==='extend' -> 服务器已伸钩，显示=服务器插值进度+衰减offset（防回缩跳变）
- *   其它(retract/show)    -> 抓取已定，结束预测，交还服务器
- */
-const PRED = { active: false, ang0: 0, len0: 0, startTs: 0, offset: null };
-function predReset() { PRED.active = false; PRED.offset = null; }
-function predNow() { return (typeof performance !== 'undefined' ? performance.now() : Date.now()); }
-function predFire(me) {
-  if (!me || !me.hook || me.hook.state !== 'swing') return;
-  PRED.active = true; PRED.offset = null;
-  PRED.ang0 = me.hook.ang; PRED.len0 = me.hook.len;
-  PRED.startTs = predNow();
-}
-function applyPrediction() {
-  if (!PRED.active) return;
-  if (G.phase !== 'play') { predReset(); return; }
-  const me = G.players[NET.seat];
-  const auth = (currSnap && currSnap.players && currSnap.players[NET.seat]) || null;
-  if (!me || !me.hook || !auth || !auth.hook) { predReset(); return; }
-  const st = auth.hook.state;
-  const el = (predNow() - PRED.startTs) / 1000;
-  if (st === 'swing') {
-    // 服务器还没确认：完全本地预测；超时保护，避免服务器拒绝 fire 时假伸到顶
-    if (el > 2) { predReset(); return; }
-    me.hook.state = 'extend';
-    me.hook.ang = PRED.ang0;
-    me.hook.len = Math.min(MAX_LEN, PRED.len0 + EXT_SPEED * Math.max(0, el));
-    me.hook.item = null;
-    return;
-  }
-  if (st === 'extend') {
-    // 服务器已伸钩：显示 = 服务器插值进度 + 衰减 offset，避免回缩跳变
-    if (PRED.offset == null) {
-      const want = Math.min(MAX_LEN, PRED.len0 + EXT_SPEED * Math.max(0, el));
-      PRED.offset = want - me.hook.len;
-    }
-    me.hook.state = 'extend';
-    me.hook.len = Math.min(MAX_LEN, Math.max(0, me.hook.len + PRED.offset));
-    PRED.offset *= 0.8;
-    if (Math.abs(PRED.offset) < 1) predReset();
-    return;
-  }
-  // retract / show / 回到 swing：抓取或收尾由服务器决定，结束预测
-  predReset();
-}
-
 /* ---------------- 覆盖：ov 显隐（原版也有，这里保证存在） ---------------- */
 function showOv(html) { ov.innerHTML = html; ov.classList.add('show'); }
 function hideOv() { ov.classList.remove('show'); ov.innerHTML = ''; }
@@ -680,7 +630,6 @@ function input(act) {
   if (!NET.started || G.phase !== 'play') return;
   const me = G.players[NET.seat];
   if (!me || me.isAI) return;
-  if (act === 'fire' && !PRED.active) predFire(me); // 本地即时伸钩（方案A）
   emit(PROTO.MSG.INPUT, { act });
 }
 function flow(act, i) { emit(PROTO.MSG.FLOW, { act, i }); }
@@ -809,7 +758,6 @@ function hydrate(s) {
   if (s.round !== lastUIRound) {
     lastUIRound = s.round;
     G.fx = []; G.parts = []; G.floats = [];
-    predReset(); // 换回合清预测，避免跨回合残留
   }
   G.items = s.items.map(it => Object.assign({}, it));
   const byId = new Map(G.items.map(it => [it.id, it]));
@@ -1068,7 +1016,6 @@ function frame(ts) {
     const span = currAt - prevAt;
     const alpha = span > 0 && prevSnap ? clamp((renderAt - prevAt) / span, 0, 1) : 1;
     hydrate(lerpSnap(prevSnap, currSnap, alpha));
-    applyPrediction(); // 方案A：在自己火钩时覆盖本地显示，服务器快照随后平滑收敛
   }
   render();
   requestAnimationFrame(frame);
