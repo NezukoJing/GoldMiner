@@ -679,6 +679,7 @@ function drawIcon(cv2){
 const NET = { socket: null, room: null, seat: -1, isHost: false, phase: '', started: false };
 const CONFIG = JSON.parse(JSON.stringify(DEFAULT_CFG));
 CONFIG.qtyOpen = false; // 联机大厅物品数量面板默认收起
+let gmUnlocked = false; // GM 指令解锁物品概率调整面板（本地 UI 开关，调档位重绘不丢）
 let G = {
   phase: 'setup', demo: false, players: [], items: [], fx: [], parts: [], floats: [],
   sticks: [], time: 0, round: 0, points: [0, 0], history: [], timeLeft: 0,
@@ -799,6 +800,17 @@ function bindQtyPanel(editable) {
     ov.querySelectorAll(`[data-qty="${t}"]`).forEach(x => x.classList.toggle('on', x.dataset.v === v));
     send();
   });
+}
+/* 物品概率区：房主需 GM 指令解锁；非房主只读摘要。只重绘 #qtyHolder，避免整页重建跳滚动 */
+function renderQtyArea(isHost, countsRo) {
+  const holder = $('#qtyHolder'); if (!holder) return;
+  if (!isHost) { holder.innerHTML = qtyPanelHTML(countsRo, false); return; }
+  if (!gmUnlocked) {
+    holder.innerHTML = '<div style="margin:6px 0 4px;padding:8px 12px;border:1px dashed #e6c78d;border-radius:10px;background:#fffaf0;color:#a67c3a;font-size:12px">🔒 物品概率调整已锁定 —— 在上方输入 GM 指令解锁</div>';
+    return;
+  }
+  holder.innerHTML = qtyPanelHTML(CONFIG.counts, true);
+  bindQtyPanel(true);
 }
 /* 预热大字字形：避免 countdown 首帧首次栅格化 + 描边造成的一次性尖峰（~6ms） */
 let fontsPrewarmed = false;
@@ -958,11 +970,13 @@ function renderLobbyOrRoom(m) {
         ${[30, 45, 60].map(v => `<button data-k="roundTime" data-v="${v}" class="${CONFIG.roundTime === v ? 'on' : ''}">${v}秒</button>`).join('')}</div></div>
       <div class="row"><label>随机种子</label><input id="cfgSeed" maxlength="24" placeholder="留空随机" value="${esc(CONFIG.seed || '')}" class="seed-input">
         <button class="btn" id="cfgSeedBtn">🎲</button></div>
-      ${qtyPanelHTML(CONFIG.counts, true)}
+      <div class="row"><label>GM 指令</label><input id="gmInput" maxlength="24" placeholder="输入 GM 指令解锁高级设置" class="seed-input">
+        <button class="btn" id="gmBtn">解锁</button><span class="gm-tip" id="gmTip"></span></div>
+      <div id="qtyHolder"></div>
       <div class="center" style="margin-top:10px"><button class="primary" id="netStart">开始对局</button></div>`;
   } else {
     cfgUI = `<div class="center dim" style="margin:8px 0">等待房主开始对局…（可先熟悉键位：S/W 出钩/炸药）</div>
-      ${qtyPanelHTML(m.cfg && m.cfg.counts, false)}`;
+      <div id="qtyHolder"></div>`;
   }
   showOv(`<div class="panel" style="width:560px">
     <h1>黄金矿工 · 联机对抗</h1>
@@ -990,7 +1004,21 @@ function renderLobbyOrRoom(m) {
     emit(PROTO.MSG.SET_CFG, { cfg: CONFIG });
     setTimeout(() => emit(PROTO.MSG.START, {}), 60);
   };
-  bindQtyPanel(!!m.isHost);
+  if (m.isHost) {
+    const gmInput = $('#gmInput');
+    const tryGm = () => {
+      if (gmInput && gmInput.value.trim() === 'jyfnb') {
+        gmUnlocked = true;
+        renderQtyArea(true); // 只重绘画板区，不重建整页，避免滚动跳动
+        const tip = $('#gmTip'); if (tip) { tip.textContent = '✓ 已解锁'; tip.style.color = '#2e7d32'; }
+      } else {
+        const tip = $('#gmTip'); if (tip) { tip.textContent = '指令错误'; tip.style.color = '#c62828'; }
+      }
+    };
+    if ($('#gmBtn')) $('#gmBtn').onclick = tryGm;
+    if (gmInput) gmInput.onkeydown = e => { if (e.key === 'Enter') tryGm(); };
+  }
+  renderQtyArea(!!m.isHost, m.cfg && m.cfg.counts);
   if ($('#leaveRoom')) $('#leaveRoom').onclick = () => { emit(PROTO.MSG.LEAVE); NET.room = null; location.reload(); };
 }
 function renderLobby() {
