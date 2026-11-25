@@ -106,6 +106,42 @@ kbd{display:inline-block;min-width:20px;padding:1px 5px;border:1.5px solid #c9b1
 .tbl td.wc{box-shadow:inset 0 -3px 0 #ffbf00}
 .btns{display:flex;gap:14px;justify-content:center}
 #mute{position:fixed;right:10px;bottom:10px;font:12px "Microsoft YaHei",sans-serif;background:rgba(255,248,230,.85);border:1px solid #d9b06a;border-radius:8px;padding:4px 10px;cursor:pointer;color:#6b4214;z-index:5}
+
+
+/* ===== SHOP_SCENE_CSS_BEGIN ===== */
+/* 商店 HUD：透明覆盖层，canvas 负责店铺场景/矿工/钩爪/商品，这里只放按钮与信息 */
+#ov:has(.shop-hud){background:transparent!important;pointer-events:none}
+.shop-hud{position:absolute;inset:0;pointer-events:none;color:#f3e0bc;font-family:inherit}
+.shop-hud .sh-sign{position:absolute;top:16px;left:34px;background:linear-gradient(#e8c98a,#c79a54);border:4px solid #7a4e28;
+  border-radius:8px;padding:8px 20px;color:#4a2c10;text-align:center;box-shadow:0 6px 14px rgba(0,0,0,.45),inset 0 0 0 2px #f5e0b0;transform:rotate(-2deg)}
+.shop-hud .sh-sign b{font-size:22px;letter-spacing:3px;display:block;font-weight:900}
+.shop-hud .sh-sign span{font-size:13px;color:#7a4a12}
+.shop-hud .sh-score{position:absolute;top:20px;left:50%;transform:translateX(-50%);font-size:17px;font-weight:bold;
+  background:linear-gradient(#3a2415,#241408);border:2px solid #8a5a2a;border-radius:20px;padding:5px 18px;box-shadow:0 4px 10px rgba(0,0,0,.45)}
+.shop-hud .sh-score span{color:#c9a878;margin:0 6px}
+.shop-hud .sh-timer{position:absolute;top:16px;right:42px;min-width:52px;text-align:center;
+  background:linear-gradient(#3a2415,#241408);border:3px solid #8a5a2a;border-radius:10px;padding:5px 12px;
+  font-size:24px;font-weight:900;color:#ffcf4a;box-shadow:0 6px 14px rgba(0,0,0,.5)}
+.shop-hud .sh-tip{position:absolute;top:70px;left:50%;transform:translateX(-50%);font-size:14px;color:#ffe0a0;
+  background:rgba(30,16,6,.6);padding:5px 18px;border-radius:18px;border:1px solid #8a5a2a;white-space:nowrap}
+.shop-hud .sh-bottom{position:absolute;left:0;right:0;bottom:18px;display:flex;align-items:flex-end;justify-content:space-between;
+  padding:0 30px;gap:16px}
+.shop-hud .sh-wallet{background:linear-gradient(#33210f,#1d1107);border:2px solid #6b4218;border-radius:10px;padding:10px 20px;
+  font-size:24px;font-weight:900;color:#ffd23f;text-shadow:0 2px 0 #7a4a00;box-shadow:0 6px 14px rgba(0,0,0,.5)}
+.shop-hud .sh-wallet small{font-size:12px;color:#c9a878;font-weight:normal;display:block;text-shadow:none}
+.shop-hud .sh-chips{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;flex:1}
+.shop-hud .chip{border-radius:10px;padding:6px 14px;border:2px solid #8a5a2a;background:rgba(30,16,6,.82);text-align:center;color:#f3e0bc;min-width:92px}
+.shop-hud .chip.t0{border-color:#e5484d}.shop-hud .chip.t1{border-color:#3b82f6}
+.shop-hud .chip b{display:block;font-size:13px}
+.shop-hud .chip .lg{color:#ffcf33;font-size:11px;display:block;margin-top:2px;min-height:13px}
+.shop-hud .dim{color:#c9a878;font-size:11px}
+.shop-hud .primary{pointer-events:auto;font-family:inherit;font-size:16px;font-weight:bold;padding:12px 26px;border-radius:10px;cursor:pointer;
+  border:2px solid #7a4a00;background:linear-gradient(#e0a53c,#b87100);color:#3a2008;box-shadow:0 5px 12px rgba(0,0,0,.45);white-space:nowrap}
+.shop-hud .primary:hover{filter:brightness(1.12)}
+.shop-hud .primary.ready{background:linear-gradient(#5fd07a,#2e9e4f);color:#0a2e14;border-color:#1c6e34;animation:pulse 1.2s infinite}
+@keyframes pulse{0%,100%{box-shadow:0 5px 12px rgba(0,0,0,.45)}50%{box-shadow:0 5px 22px rgba(95,208,122,.9)}}
+/* ===== SHOP_SCENE_CSS_END ===== */
+
 </style>
 
 <style>
@@ -348,7 +384,52 @@ function drawItemSprite(c,it,im,mul){
   if(it.t==='diamond'){const s=(Math.sin(G.time*3+it.ph)+1)/2;if(s>.55){c.fillStyle=`rgba(255,255,255,${(s-.55)*2.2})`;star(c,r*.45,-r*.75,7*s);}}
   c.restore();
 }
+/* 商店商品：用 drawIcon 的画法预渲染到缓存 canvas，再贴到柜台/钩爪上 */
+const SHOP_ICON_CACHE={};
+function shopIconCanvas(type){
+  if(SHOP_ICON_CACHE[type])return SHOP_ICON_CACHE[type];
+  const cv=document.createElement('canvas');cv.width=144;cv.height=144;cv.dataset.icon=type;/*SHOP_ICON_FIX*/
+  try{drawIcon(cv);}catch(e){}
+  return SHOP_ICON_CACHE[type]=cv;
+}
+function drawShopItem(c,it){
+  const sold=it.offer&&it.offer.soldTo!==null;
+  const img=shopIconCanvas(it.t);
+  c.save();c.translate(it.x,it.y);
+  if(sold)c.globalAlpha=.38;
+  if(img)c.drawImage(img,-62,-62,124,124);/*SHOP_ICON_FIX*/
+  if(sold){
+    c.globalAlpha=1;c.rotate(-.16);
+    c.fillStyle='rgba(150,30,20,.92)';rr(c,-44,-13,88,26,6);c.fill();
+    c.strokeStyle='#ffd9c0';c.lineWidth=2;c.stroke();
+    c.fillStyle='#fff3e0';c.font=`900 19px ${FONT}`;c.textAlign='center';c.textBaseline='middle';c.fillText('已售出',0,1);
+  }
+  c.restore();
+}
+/* 商店背景：木质店铺墙 + 顶部横梁 + 壁灯 + 柜台，风格贴合参考截图 */
+function drawShopBackdrop(c){
+  const g=c.createLinearGradient(0,0,0,H);g.addColorStop(0,'#3a2412');g.addColorStop(.5,'#52331a');g.addColorStop(1,'#6b4423');
+  c.fillStyle=g;c.fillRect(0,0,W,H);
+  c.strokeStyle='rgba(30,16,6,.35)';c.lineWidth=2;
+  for(let x=24;x<W;x+=56){c.beginPath();c.moveTo(x,0);c.lineTo(x,H);c.stroke();}
+  c.fillStyle='#2b180a';c.fillRect(0,0,W,104);
+  c.fillStyle='#7a4e28';c.fillRect(0,96,W,18);
+  c.fillStyle='#a8703a';c.fillRect(0,96,W,4);
+  c.fillStyle='#3a200e';c.fillRect(0,114,W,6);
+  [190,W-190].forEach(x=>{
+    const lg=c.createRadialGradient(x,150,4,x,150,40);
+    lg.addColorStop(0,'rgba(255,220,140,.9)');lg.addColorStop(.4,'rgba(255,170,50,.35)');lg.addColorStop(1,'rgba(255,150,20,0)');
+    c.fillStyle=lg;c.beginPath();c.arc(x,150,40,0,7);c.fill();
+    c.fillStyle='#ffcf6b';c.beginPath();c.ellipse(x,150,5,11,0,0,7);c.fill();
+  });
+  const cg=c.createLinearGradient(0,384,0,470);cg.addColorStop(0,'#c98a45');cg.addColorStop(.15,'#a86a30');cg.addColorStop(1,'#6b3f1c');
+  c.fillStyle=cg;c.fillRect(0,384,W,86);
+  c.fillStyle='#e0a860';c.fillRect(0,384,W,6);
+  c.strokeStyle='rgba(60,30,10,.4)';c.lineWidth=2;
+  for(let x=0;x<W;x+=120){c.beginPath();c.moveTo(x,392);c.lineTo(x,470);c.stroke();}
+}
 function drawItem(c,it){
+  if(it.shop)return drawShopItem(c,it);
   const m=ITEM_SPR[it.t],im=m&&spr(m[0]);
   if(im)return drawItemSprite(c,it,im,m[1]);
   const r=it.r;c.save();c.translate(it.x,it.y);
@@ -524,8 +605,14 @@ function bigText(c,text,y,size,col,alpha=1,scale=1){
 function render(){
   const c=ctx;c.save();
   if(G.shake>0)c.translate(rnd(-6,6)*G.shake,rnd(-6,6)*G.shake);
-  if(BG)c.drawImage(BG,0,0,W,H);
+  if(G.phase==='shop')drawShopBackdrop(c);
+  else if(BG)c.drawImage(BG,0,0,W,H);
   for(const it of G.items)if(!it.taken&&!it.gone)drawItem(c,it);
+  if(G.phase==='shop')for(const it of G.items){if(!it.offer)continue;const sold=it.offer.soldTo!==null;
+    c.save();c.textAlign='center';c.textBaseline='middle';
+    c.fillStyle='rgba(28,14,5,.86)';rr(c,it.x-52,it.y+46,104,40,7);c.fill();c.strokeStyle='#7a4e28';c.lineWidth=2;c.stroke();
+    c.fillStyle=sold?'#9a8166':'#ffcf4a';c.font=`900 18px ${FONT}`;c.fillText('$'+fmt(it.offer.price).slice(1),it.x,it.y+58);
+    c.fillStyle=sold?'#7a6a58':'#f0dcb4';c.font=`600 12px ${FONT}`;c.fillText(SHOP[it.offer.type].n,it.x,it.y+77);c.restore();}
   for(const p of G.players)drawMiner(c,p);
   for(const p of G.players)drawRope(c,p);
   for(const p of G.players)if(p.hook.item)drawItem(c,p.hook.item);
@@ -538,10 +625,10 @@ function render(){
   for(const q of G.parts){c.globalAlpha=Math.max(0,1-q.t/q.life);c.fillStyle=q.c;if(q.star)star(c,q.x,q.y,q.sz*1.6);else c.fillRect(q.x-q.sz/2,q.y-q.sz/2,q.sz,q.sz);}
   c.globalAlpha=1;c.restore();
   if(!G.demo&&G.cfg){
-    for(const p of G.players)drawLabel(c,p);
+    if(G.phase!=='shop')for(const p of G.players)drawLabel(c,p);
     for(const f of G.floats){const q=f.t/f.dur;c.save();c.globalAlpha=q>.7?(1-q)/.3:1;c.font=`900 ${f.size}px ${FONT}`;c.textAlign='center';c.textBaseline='middle';
       c.lineWidth=5;c.strokeStyle='#4a2508';c.strokeText(f.text,f.x,f.y);c.fillStyle=f.c;c.fillText(f.text,f.x,f.y);c.restore();}
-    drawHUD(c);
+    if(G.phase!=='shop')drawHUD(c);
     if(G.phase==='countdown'){const n=Math.ceil(G.countdown),fr=G.countdown-Math.floor(G.countdown);
       bigText(c,G.round===1?`第 ${G.round} 轮`:`第 ${G.round} 轮`,330,36,'#fff3c4');bigText(c,String(n),410,96,'#ffd23f',1,1+fr*.4);}
     if(G.goFlash>0)bigText(c,'开挖！',400,80,'#ffd23f',Math.min(1,G.goFlash*2),1+(.8-G.goFlash)*.3);
@@ -551,7 +638,7 @@ function render(){
 
 function frame(ts){
   const dt=Math.min(.05,(ts-last)/1000||0);last=ts;
-  if(!G.paused){if(G.demo||G.phase==='play'||G.phase==='countdown')updateGame(dt);updateFx(dt);G.time+=dt;}
+  if(!G.paused){if(G.demo||G.phase==='play'||G.phase==='countdown'||G.phase==='shop')updateGame(dt);updateFx(dt);G.time+=dt;}
   render();requestAnimationFrame(frame);
 }
 
@@ -627,7 +714,8 @@ function connect() {
 }
 function emit(msg, data) { if (NET.socket) NET.socket.emit(msg, data || {}); }
 function input(act) {
-  if (!NET.started || G.phase !== 'play') return;
+  if (!NET.started || (G.phase !== 'play' && G.phase !== 'shop')) return;
+  if (G.phase === 'shop' && G.shop && G.shop.done) return;
   const me = G.players[NET.seat];
   if (!me || me.isAI) return;
   emit(PROTO.MSG.INPUT, { act });
@@ -799,27 +887,29 @@ function hydrate(s) {
 }
 
 /* ---------------- UI 状态机 ---------------- */
-let lastShopSig = '';
-function shopSig(s) {
-  const sh = s && s.shop;
-  if (!sh) return '';
-  const wallets = (s.players || []).map(p => p.wallet).join(',');
-  const sold = sh.offers.map(o => o.soldTo).join(',');
-  return [sh.turn, sh.order.join(','), sold, wallets,
-    sh.order.map(idx => sh.log[idx] || '').join('|')].join('#');
-}
+let shopHudTick = null;
 function syncUI(s) {
   if (s.phase !== lastUIPhase) {
-    const prev = lastUIPhase; lastUIPhase = s.phase;
+    lastUIPhase = s.phase;
     if (['countdown', 'play', 'roundEnd'].includes(s.phase)) hideOv();
     if (s.phase === 'result') renderResultUI();
-    else if (s.phase === 'shop') { lastShopSig = shopSig(s); renderShopUI(); }
-    else if (s.phase === 'final') renderFinalUI();
-  } else if (s.phase === 'shop') {
-    // 只在选购状态真正变化时重建，避免每帧重建导致按钮 click 丢失
-    const sig = shopSig(s);
-    if (sig !== lastShopSig) { lastShopSig = sig; renderShopUI(); }
+    else if (s.phase === 'shop') { renderShopUI(); startShopHudTick(); }
+    else if (s.phase === 'final') { if (shopHudTick) { clearInterval(shopHudTick); shopHudTick = null; } renderFinalUI(); }
+    else if (shopHudTick) { clearInterval(shopHudTick); shopHudTick = null; }
   }
+}
+function startShopHudTick() {
+  if (shopHudTick) clearInterval(shopHudTick);
+  shopHudTick = setInterval(() => {
+    if (!currSnap || currSnap.phase !== 'shop' || !currSnap.shop) { clearInterval(shopHudTick); shopHudTick = null; return; }
+    const sh = currSnap.shop, done = !!sh.done || sh.timeLeft <= 0 || sh.offers.every(o => o.soldTo !== null);
+    const t = $('#shTimer'); if (t) t.textContent = Math.max(0, Math.ceil(sh.timeLeft));
+    (currSnap.players || []).forEach((p, i) => { const el = $('#shlog' + i); if (el && sh.log[i]) el.textContent = sh.log[i]; });
+    const me = currSnap.players[NET.seat];
+    const w = $('#shWalletVal'); if (w && me) w.textContent = fmt(me.wallet);
+    const b = $('#shEnd');
+    if (b && done && b.textContent !== ('开始第 ' + (currSnap.round + 1) + ' 轮')) { b.textContent = '开始第 ' + (currSnap.round + 1) + ' 轮'; b.classList.add('ready'); }
+  }, 120);
 }
 function toast(text) {
   let t = $('#toast');
@@ -940,45 +1030,35 @@ function renderResultUI() {
   if ($('#rNext')) $('#rNext').onclick = () => flow(over ? PROTO.FLOW.TO_FINAL : PROTO.FLOW.TO_SHOP);
 }
 
-/* ---- 商店页 ---- */
+/* ---- 商店页（木质店铺风格） ---- */
+/* ---- 商店页（透明 HUD，场景由 canvas 绘制） ---- */
 function renderShopUI() {
   const s = currSnap; if (!s || !s.shop) return;
   const sh = s.shop;
-  const cur = sh.turn < sh.order.length ? s.players.find(p => p.idx === sh.order[sh.turn]) : null;
-  const myTurn = cur && cur.idx === NET.seat && !cur.isAI;
-  const chips = sh.order.map((idx, i) => {
-    const p = s.players.find(x => x.idx === idx);
-    return `<div class="chip t${p.team} ${i === sh.turn ? 'cur' : ''} ${i < sh.turn ? 'done' : ''}">
-      <b>${i + 1}. ${esc(p.name)}${p.isAI ? ' <span class="dim" style="font-size:12px">电脑</span>' : ''}</b>
-      <div>钱包 ${fmt(p.wallet)}</div><div class="lg">${sh.log[idx] || (i < sh.turn ? '' : '&nbsp;')}</div></div>`;
-  }).join('');
-  const cards = sh.offers.map((o, i) => {
-    const sold = o.soldTo !== null;
-    const no = !sold && myTurn && o.price > (cur ? cur.wallet : 0);
-    return `<div class="card ${sold ? 'sold' : ''} ${no ? 'no' : ''}" data-i="${i}">
-      <div class="cn" style="padding:14px 4px 4px;font-size:18px">${SHOP[o.type].n}</div>
-      <div class="cd" style="padding:0 8px 6px;min-height:42px">${SHOP[o.type].d || ''}</div>
-      <div class="cp">${fmt(o.price)}</div>
-      ${sold ? `<div class="soldtag">${esc((s.players[o.soldTo] || {}).name || '')} 已购</div>` : ''}</div>`;
-  }).join('');
-  let bar;
-  if (!cur) bar = NET.isHost ? `<span>选购完成</span><button class="primary" id="sNext">开始第 ${s.round + 1} 轮</button>`
-                             : `<span>选购完成，等待房主开始下一轮…</span>`;
-  else if (myTurn) bar = `<span>轮到你选购（限 1 件）· 钱包 <b>${fmt(cur.wallet)}</b></span><button class="btn" id="sSkip">跳过</button>`;
-  else bar = `<span>${esc(cur.name)} 选购中…</span>`;
-  showOv(`<div class="panel shop" style="width:760px"><h2>商店 · 第 ${s.round} 轮后</h2>
-    <div class="center dim" style="margin:-6px 0 8px;font-size:13px">按上轮物资价值从低到高依次选购 · 道具下一轮生效</div>
-    ${netBar()}
-    <div class="order">${chips}</div><div class="cards">${cards}</div><div class="turnbar">${bar}</div>
+  const me = s.players[NET.seat] || s.players[0];
+  const done = !!sh.done || sh.timeLeft <= 0 || sh.offers.every(o => o.soldTo !== null);
+  const chips = (s.players || []).map((p, i) =>
+    `<div class="chip t${p.team}"><b>${esc(p.name)}${p.isAI ? ' <span class="dim">电脑</span>' : ''}</b><span class="lg" id="shlog${i}">${esc(sh.log[i] || '')}</span></div>`
+  ).join('');
+  showOv(`<div class="shop-hud">
+    <div class="sh-sign"><b>杂货铺</b><span>下一关 ${s.round + 1} / ${s.rounds}</span></div>
+    <div class="sh-score"><b style="color:#e5484d">红队 ${s.points[0]}</b><span> : </span><b style="color:#3b82f6">${s.points[1]} 蓝队</b></div>
+    <div class="sh-timer" id="shTimer">${Math.max(0, Math.ceil(sh.timeLeft))}</div>
+    <div class="sh-tip">同时出钩 · 钩到即购买 · 道具下一轮生效</div>
+    <div class="sh-bottom">
+      <div class="sh-wallet"><small>我的钱包</small><span id="shWalletVal">${fmt(me ? me.wallet : 0)}</span></div>
+      <div class="sh-chips">${chips}</div>
+      ${NET.isHost
+        ? `<button class="primary ${done ? 'ready' : ''}" id="shEnd">${done ? '开始第 ' + (s.round + 1) + ' 轮' : '结束购物'}</button>`
+        : `<button class="primary" id="shEnd" disabled style="opacity:.6;cursor:default">等待房主</button>`}
+    </div>
   </div>`);
-  if (myTurn) {
-    ov.querySelectorAll('.card').forEach(el => el.onclick = () => {
-      if (el.classList.contains('sold') || el.classList.contains('no')) return;
-      flow(PROTO.FLOW.BUY, +el.dataset.i);
-    });
-    if ($('#sSkip')) $('#sSkip').onclick = () => flow(PROTO.FLOW.SKIP);
-  }
-  if ($('#sNext')) $('#sNext').onclick = () => flow(PROTO.FLOW.NEXT_ROUND);
+  if ($('#shEnd') && NET.isHost) $('#shEnd').onclick = () => {
+    if (!currSnap || !currSnap.shop) return;
+    const d = !!currSnap.shop.done || currSnap.shop.timeLeft <= 0 || currSnap.shop.offers.every(o => o.soldTo !== null);
+    if (d) flow(PROTO.FLOW.NEXT_ROUND);
+    else toast('抢购进行中，等倒计时结束或商品售罄');
+  };
 }
 
 /* ---- 结算页 ---- */
@@ -1016,7 +1096,7 @@ addEventListener('keydown', e => {
   const tag = e.target.tagName;
   if (e.code === 'KeyM' && tag !== 'INPUT') { toggleMute(); return; }
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code) && tag !== 'INPUT') e.preventDefault();
-  if (e.repeat || !NET.started || G.phase !== 'play') return;
+  if (e.repeat || !NET.started || (G.phase !== 'play' && G.phase !== 'shop')) return;
   const keys = (KEYS[G.cfg.mode] || KEYS1)[NET.seat];
   if (!keys) return;
   if (e.code === keys.fire) input('fire');

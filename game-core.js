@@ -257,13 +257,14 @@
 
     /* ---------- 钩子与物理 ---------- */
     tipOf(p) { const h = p.hook; return { x: p.x + Math.sin(h.ang) * h.len, y: p.py + Math.cos(h.ang) * h.len }; }
-    canAct() { return this.G.phase === 'play'; }
+    canAct() { return this.G.phase === 'play' || this.G.phase === 'shop'; }
     fire(p) {
       if (!this.canAct() || p.hook.state !== 'swing') return false;
       p.hook.state = 'extend'; this.fx('sfx', { k: 'fire' }); return true;
     }
     bomb(p) {
       const h = p.hook;
+      if (this.G.phase !== 'play') return false; // 商店阶段不可炸
       if (!this.canAct() || h.state !== 'retract' || !h.item || p.dynamite <= 0 || p.stickFlying) return false;
       p.dynamite--; p.stickFlying = true;
       this.G.sticks = this.G.sticks || [];
@@ -284,7 +285,25 @@
         }
       }
     }
+    // 商店：钩到商品 → 购买。余额足够则扣款+生效+标记售出；不足则提示且商品弹回货架（不外售）
+    shopCollect(p, it) {
+      const off = it.offer;
+      if (!off || off.soldTo !== null) return;
+      if (p.wallet < off.price) {
+        this.fx('sfx', { k: 'junk' });
+        this.fx('float', { x: p.x, y: GROUND + 40, text: '余额不足', c: '#ff6a4d', size: 24 });
+        return;
+      }
+      p.wallet -= off.price;
+      if (off.type === 'dynamite') p.dynamite++; else p.nextBuffs[off.type] = true;
+      off.soldTo = p.idx;
+      const s = this.G.shop;
+      if (s) s.log[p.idx] = `购买：${SHOP[off.type].n}`;
+      this.fx('sfx', { k: 'buy' });
+      this.fx('float', { x: p.x, y: GROUND + 40, text: '-' + off.price, c: '#ffd23f', size: 22 });
+    }
     collect(p, it) {
+      if (it.shop) { this.shopCollect(p, it); return; }
       let v, txt;
       if (it.t === 'bag') { const r = this.openBag(p, it); v = r.v; txt = r.text || ('+' + this._fmt(v)); }
       else { v = this.itemValue(it, p); txt = '+' + this._fmt(v); }
@@ -303,21 +322,43 @@
         h.ang += h.dir * SWING_SPEED * dt;
         if (h.ang > MAXA) { h.ang = MAXA; h.dir = -1; } else if (h.ang < -MAXA) { h.ang = -MAXA; h.dir = 1; }
         h.len = L0;
-        if (p.isAI && this.canAct()) this.aiThink(p, dt);
+        if (p.isAI && this.G.phase === 'shop') this.shopAIThink(p, dt);
+        else if (p.isAI && this.G.phase === 'play') this.aiThink(p, dt);
       } else if (h.state === 'show') {
         h.showT -= dt;
-        if (h.showT <= 0) { if (h.item) { this.G.items = this.G.items.filter(o => o !== h.item); h.item = null; } h.state = 'swing'; }
+        if (h.showT <= 0) {
+          if (h.item) {
+            if (h.item.shop) { // 商品回到货架原位，已售的留在架上显示“已售出”
+              h.item.x = h.item.x0; h.item.y = h.item.y0; h.item.taken = false;
+            } else this.G.items = this.G.items.filter(o => o !== h.item);
+            h.item = null;
+          }
+          h.state = 'swing';
+        }
       } else if (h.state === 'extend') {
         h.len += EXT_SPEED * dt; const tip = this.tipOf(p);
         if (tip.x < 0 || tip.x > W || tip.y > H || h.len >= MAX_LEN) { h.state = 'retract'; return; }
         for (const it of this.G.items) {
-          if (it.taken || it.gone) continue;
+          if (it.gone) continue;
+          if (it.shop && it.offer && it.offer.soldTo !== null) continue; // 已售商品钩子穿过
           const R = it.r + HOOK_R;
-          if ((tip.x - it.x) ** 2 + (tip.y - it.y) ** 2 < R * R) {
-            if (it.t === 'tnt') { this.explodeTNT(it); h.state = 'retract'; h.burnt = .8; }
-            else { it.taken = true; h.item = it; h.state = 'retract'; p.ai.bombDecided = false; this.fx('sfx', { k: 'grab' }); }
+          if ((tip.x - it.x) ** 2 + (tip.y - it.y) ** 2 >= R * R) continue;
+          if (it.t === 'tnt') { this.explodeTNT(it); h.state = 'retract'; h.burnt = .8; break; }
+          if (it.taken) {
+            if (it.shop) continue; // 商店商品先到先得，不可抢夺
+            // 抢夺：物品正被另一玩家拉回（retract）时，本钩子碰到即抢归自己
+            const owner = this.G.players.find(q => q !== p && q.hook.item === it && q.hook.state === 'retract');
+            if (!owner) continue; // 非拉回中（如已收尾的 show 阶段）不可抢
+            owner.hook.item = null;                 // 原主人变空钩收回
+            if (owner.isAI && owner.ai) owner.ai.bombDecided = false;
+            it.taken = true; h.item = it; h.state = 'retract'; p.ai.bombDecided = false;
+            this.fx('sfx', { k: 'grab' });
+            this.fx('float', { x: it.x, y: it.y - 26, text: '抢到了！', c: '#ff5a3c', size: 28 });
             break;
           }
+          it.taken = true; h.item = it; h.state = 'retract'; p.ai.bombDecided = false;
+          this.fx('sfx', { k: it.shop ? 'coin' : 'grab' });
+          break;
         }
       } else if (h.state === 'retract') {
         const sp = h.item ? this.pullSpeed(p, h.item) : RET_EMPTY;
@@ -325,7 +366,7 @@
         if (h.item) {
           const tip = this.tipOf(p), off = h.item.r * .55;
           h.item.x = tip.x + Math.sin(h.ang) * off; h.item.y = tip.y + Math.cos(h.ang) * off;
-          if (p.isAI && this.canAct()) this.aiBomb(p, dt);
+          if (p.isAI && this.G.phase === 'play') this.aiBomb(p, dt);
         }
         if (h.len <= L0) {
           h.len = L0;
@@ -408,8 +449,17 @@
         const prev = Math.ceil(G.timeLeft); G.timeLeft -= dt;
         if (Math.ceil(G.timeLeft) < prev && G.timeLeft <= 5 && G.timeLeft > 0) this.fx('sfx', { k: 'tick' });
         if (G.timeLeft <= 0) { G.timeLeft = 0; this.endRound(); return; }
+      } else if (G.phase === 'shop') {
+        if (G.shop && !G.shop.done) {
+          const prev = Math.ceil(G.shop.timeLeft); G.shop.timeLeft -= dt;
+          if (Math.ceil(G.shop.timeLeft) < prev && G.shop.timeLeft <= 5 && G.shop.timeLeft > 0) this.fx('sfx', { k: 'tick' });
+          if (this.shopDone()) {
+            G.shop.done = true; G.shop.timeLeft = Math.max(0, G.shop.timeLeft);
+            this.fx('sfx', { k: 'end' });
+          }
+        }
       } else {
-        // result / shop / roundEnd / final：物理仍推进一点（让展示期的钩子/粒子自然），但不计时
+        // result / roundEnd / final：物理仍推进一点（让展示期的钩子/粒子自然），但不计时
       }
       for (const p of G.players) this.updatePlayer(p, dt);
       this.updateSticks(dt);
@@ -460,7 +510,7 @@
     matchOver() { const G = this.G; return G.round >= G.cfg.rounds || (G.cfg.early && this.isLocked()); }
     toResult() { this.G.phase = 'result'; this.G.banner = null; }
 
-    /* ---------- 商店（数据逻辑，UI 由客户端渲染） ---------- */
+    /* ---------- 商店：所有玩家同时出钩抢购柜台上的商品 ---------- */
     genOffers(n) {
       const types = Object.keys(SHOP), out = [], cnt = {};
       while (out.length < n) {
@@ -473,52 +523,64 @@
       }
       return out;
     }
+    // 商品摆到柜台：8 个位置横向均布，柜台 y≈318~372
+    makeShopItem(offer, x, y) {
+      return {
+        id: this.itemSeq++, t: offer.type, shop: true, offer,
+        x, y, x0: x, y0: y, r: 30, w: 3, rot: 0, ph: this.srnd(0, 6.28),
+        taken: false, gone: false, fuse: 0
+      };
+    }
     openShop() {
       const G = this.G;
       G.phase = 'shop';
-      const order = [...G.players].sort((a, b) =>
-        (a.roundValues[a.roundValues.length - 1] - b.roundValues[b.roundValues.length - 1]) || (a.idx - b.idx));
-      G.shop = { order: order.map(p => p.idx), turn: 0, offers: this.genOffers(G.players.length + 2), log: {} };
+      const offers = this.genOffers(8);
+      const n = offers.length, xMin = 130, xMax = W - 130;
+      const goods = offers.map((o, i) => this.makeShopItem(o, n === 1 ? W / 2 : xMin + i * (xMax - xMin) / (n - 1), 344));
+      G.items = goods;                       // 柜台上的商品直接作为可抓物品
+      G.shop = { offers, log: {}, timeLeft: 30, done: false };
+      G.players.forEach(p => { this.resetHook(p); });
       this.shopToken++;
-      // 自动 AI 选购：把排在前面的 AI 依次处理掉，直到轮到人类或结束
-      this.autoShopAI();
     }
-    shopCur() {
-      const s = this.G.shop; if (!s) return null;
-      return s.turn < s.order.length ? this.G.players[s.order[s.turn]] : null;
+    resetHook(p) {
+      const a = this.srnd(-MAXA, MAXA), d = this.SR() < .5 ? -1 : 1;
+      Object.assign(p.hook, { state: 'swing', ang: a, dir: d, len: L0, item: null, burnt: 0, showT: 0 });
+      if (p.ai) { p.ai.fireAt = null; p.ai.reco = .1 + this.SR() * .3; p.ai.best = 0; p.ai.bombDecided = true; }
     }
-    buy(i) {
-      const s = this.G.shop, p = this.shopCur(), o = s && s.offers[i];
-      if (!p || !o || o.soldTo !== null || o.price > p.wallet) return false;
-      o.soldTo = p.idx; p.wallet -= o.price;
-      if (o.type === 'dynamite') p.dynamite++; else p.nextBuffs[o.type] = true;
-      s.log[p.idx] = `购买：${SHOP[o.type].n}`;
-      this.fx('sfx', { k: 'buy' });
-      s.turn++; this.autoShopAI(); return true;
+    shopDone() {
+      const s = this.G.shop;
+      return !!s && (s.done || s.timeLeft <= 0 || s.offers.every(o => o.soldTo !== null));
     }
-    skipShop() {
-      const s = this.G.shop, p = this.shopCur(); if (!p) return false;
-      s.log[p.idx] = '跳过'; s.turn++; this.autoShopAI(); return true;
-    }
-    aiPickShop(p) {
-      const pri = { power: 3, polish: this.G.round >= 2 ? 2.4 : 1.5, dynamite: p.dynamite < 2 ? 2.6 : 1.3, luck: 1.7, rock: 1 };
-      let best = -1, bi = -1;
-      this.G.shop.offers.forEach((o, i) => {
-        if (o.soldTo !== null || o.price > p.wallet) return;
-        let s = pri[o.type] - o.price / 1000;
-        if (p.lvl === 'easy') s = Math.random();
-        if (s > best) { best = s; bi = i; }
-      });
-      return bi;
-    }
-    autoShopAI() {
-      let guard = 0;
-      while (guard++ < 8) {
-        const p = this.shopCur();
-        if (!p || !p.isAI) break;
-        const i = this.aiPickShop(p);
-        if (i < 0) this.skipShop(); else this.buy(i);
+    // 供旧流程按钮兼容：现在选购由出钩完成，这里只做“结束购物”
+    shopCur() { return null; }
+    buy() { return false; }
+    skipShop() { return false; }
+    aiPickShop() { return -1; }
+    autoShopAI() { /* 商店 AI 改由 out-of-play aiThink 驱动 */ }
+    // 商店专用 AI 决策：挑一件买得起、未被售出的商品，按方向角出钩
+    shopAIThink(p, dt) {
+      const a = p.ai, c = AI_CFG[p.lvl] || AI_CFG.normal;
+      if (a.fireAt !== null) { a.fireAt -= dt; if (a.fireAt <= 0) { a.fireAt = null; this.fire(p); } return; }
+      a.reco -= dt;
+      if (a.reco > 0) return;
+      a.reco = .35 + this.SR() * .4;
+      const cand = this.G.shop.offers.map((o, i) => ({ o, i })).filter(({ o }) =>
+        o.soldTo === null && o.price <= p.wallet);
+      if (!cand.length) return;
+      const pri = { power: 3, polish: this.G.round >= 2 ? 2.4 : 1.6, dynamite: p.dynamite < 2 ? 2.6 : 1.2, luck: 1.7, rock: 1 };
+      let pick = null, best = -1;
+      for (const { o, i } of cand) {
+        let sc = (pri[o.type] || 1) - o.price / 1000;
+        if (p.lvl === 'easy') sc = this.SR();
+        if (sc > best) { best = sc; pick = i; }
       }
+      const it = this.G.items[pick];
+      if (!it) return;
+      const dx = it.x - p.x, dy = it.y - p.py;
+      const want = Math.atan2(dx, dy); // 钩子角：sin=dx dir, cos=dy
+      const diff = Math.abs(want - p.hook.ang);
+      if (diff < .26 && this.SR() > (c.miss || 0)) a.fireAt = this.srnd(c.react[0], c.react[1]);
+      else a.dir = (want > p.hook.ang) ? 1 : -1;
     }
     toFinal() {
       const G = this.G; G.phase = 'final'; G.banner = null;
@@ -557,8 +619,8 @@
           pIdx: s.p.idx, itemId: s.item.id, t: s.t, dur: s.dur, x0: s.x0, y0: s.y0
         })),
         shop: G.shop ? {
-          order: G.shop.order.slice(), turn: G.shop.turn,
-          offers: clone(G.shop.offers), log: clone(G.shop.log)
+          offers: clone(G.shop.offers), log: clone(G.shop.log),
+          timeLeft: G.shop.timeLeft, done: G.shop.done
         } : null
       };
     }

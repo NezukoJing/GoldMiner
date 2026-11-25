@@ -201,7 +201,12 @@ class Room {
       if (this.roundEndT >= 1.2) { this.roundEndT = 0; this.core.toResult(); }
       return;
     }
-    if (G.phase === 'result' || G.phase === 'shop' || G.phase === 'final') {
+    if (G.phase === 'shop') {
+      // 商店：所有玩家同时出钩抢购，权威推进钩爪物理 + 倒计时
+      this.core.update(dt);
+      return;
+    }
+    if (G.phase === 'result' || G.phase === 'final') {
       // 非对局阶段：只推进展示动画（钩子摆动、粒子由客户端本地跑），不推进物理
       return;
     }
@@ -217,7 +222,8 @@ class Room {
   onInput(socket, msg) {
     if (!this.started) return;
     const G = this.core.G;
-    if (G.phase !== 'play') return;
+    if (G.phase !== 'play' && G.phase !== 'shop') return;
+    if (G.phase === 'shop' && this.core.shopDone()) return;
     const seat = this.seatOf(socket.id);
     if (seat < 0 || !G.players[seat]) return;
     const p = G.players[seat];
@@ -231,24 +237,13 @@ class Room {
     const seat = this.seatOf(socket.id);
     const host = this.isHost(socket.id);
     const act = msg.act;
-    // 商店选购：只轮到本人时可操作（AI 回合已由 core 自动处理）
-    if (act === P.FLOW.BUY || act === P.FLOW.SKIP) {
-      if (G.phase !== 'shop') return;
-      const cur = this.core.shopCur();
-      if (!cur || cur.idx !== seat || cur.isAI) return;
-      if (act === P.FLOW.BUY) this.core.buy(msg.i | 0);
-      else this.core.skipShop();
-      this.broadcastState();
-      return;
-    }
     if (!host) { socket.emit(P.MSG.ERROR, { msg: '仅房主可推进流程' }); return; }
     if (act === P.FLOW.TO_SHOP && G.phase === 'result' && !this.core.matchOver()) {
       this.core.openShop();
     } else if (act === P.FLOW.TO_FINAL && G.phase === 'result' && this.core.matchOver()) {
       this.core.toFinal();
     } else if (act === P.FLOW.NEXT_ROUND && G.phase === 'shop') {
-      const cur = this.core.shopCur();
-      if (cur) { socket.emit(P.MSG.ERROR, { msg: '还有玩家未选购' }); return; }
+      if (!this.core.shopDone()) { socket.emit(P.MSG.ERROR, { msg: '抢购进行中，请等待倒计时结束或商品售罄' }); return; }
       this.core.startRound();
     } else if (act === P.FLOW.AGAIN && G.phase === 'final') {
       this.core.startMatch();
