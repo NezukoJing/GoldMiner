@@ -139,6 +139,9 @@ kbd{display:inline-block;min-width:20px;padding:1px 5px;border:1.5px solid #c9b1
   border:2px solid #7a4a00;background:linear-gradient(#e0a53c,#b87100);color:#3a2008;box-shadow:0 5px 12px rgba(0,0,0,.45);white-space:nowrap}
 .shop-hud .primary:hover{filter:brightness(1.12)}
 .shop-hud .primary.ready{background:linear-gradient(#5fd07a,#2e9e4f);color:#0a2e14;border-color:#1c6e34;animation:pulse 1.2s infinite}
+.shop-hud .sh-over{display:none;position:absolute;left:50%;top:46%;transform:translate(-50%,-50%);
+  font-size:54px;font-weight:900;color:#ffd23f;text-shadow:0 6px 0 #5a3008,0 10px 26px rgba(0,0,0,.65);
+  background:rgba(45,24,8,.88);border:4px solid #b8813a;border-radius:18px;padding:18px 44px;white-space:nowrap;z-index:15}
 @keyframes pulse{0%,100%{box-shadow:0 5px 12px rgba(0,0,0,.45)}50%{box-shadow:0 5px 22px rgba(95,208,122,.9)}}
 /* ===== SHOP_SCENE_CSS_END ===== */
 
@@ -178,7 +181,7 @@ kbd{display:inline-block;min-width:20px;padding:1px 5px;border:1.5px solid #c9b1
 const W=1280,H=720,GROUND=160,TOPBAR=44;
 /* 钩子参数取自原版 Flash《Gold Miner》（ActionScript 提取版复刻 GoldMiner-Rebirth，320×240 → 本作 ×3 缩放）
    原版：摆角 ±75°，匀速摆动 65°/s；出钩/空钩收回 100px/s；带物收回 = 100 × 力量 / 重量；最长 230px；拉上来后停 1 秒展示 */
-const DEG=Math.PI/180,MAXA=75*DEG,SWING_SPEED=65*DEG,EXT_SPEED=420,PULL_BASE=300,RET_EMPTY=420,MAX_LEN=1240,SHOW_TIME=1,L0=26,HOOK_R=8,POWER_MUL=1.5;
+const DEG=Math.PI/180,MAXA=75*DEG,SWING_SPEED=65*DEG,EXT_SPEED=420,PULL_BASE=300,RET_EMPTY=420,MAX_LEN=1240,SHOW_TIME=1,L0=26,HOOK_R=8,POWER_MUL=1.5,SHOP_END_DELAY=1.4,SHOP_RET_MUL=2;/*SHOP_FAST_RET*/
 const FONT='"Microsoft YaHei","PingFang SC",sans-serif';
 const TEAM=[{name:'红队',c:'#e5484d',dark:'#b4252a',light:'#ffe3e3'},{name:'蓝队',c:'#3b82f6',dark:'#1d4ed8',light:'#dde9ff'}];
 const KEYNAME={KeyS:'S',KeyW:'W',KeyG:'G',KeyT:'T',KeyK:'K',KeyI:'I',ArrowDown:'↓',ArrowUp:'↑'};
@@ -907,8 +910,11 @@ function startShopHudTick() {
     (currSnap.players || []).forEach((p, i) => { const el = $('#shlog' + i); if (el && sh.log[i]) el.textContent = sh.log[i]; });
     const me = currSnap.players[NET.seat];
     const w = $('#shWalletVal'); if (w && me) w.textContent = fmt(me.wallet);
-    const b = $('#shEnd');
-    if (b && done && b.textContent !== ('开始第 ' + (currSnap.round + 1) + ' 轮')) { b.textContent = '开始第 ' + (currSnap.round + 1) + ' 轮'; b.classList.add('ready'); }
+    if (done) {
+      const ov = $('#shOver'); if (ov) ov.style.display = 'block';
+      const b = $('#shEnd');
+      if (b && b.textContent !== '即将进入下一轮…') { b.textContent = '即将进入下一轮…'; b.classList.remove('ready'); b.disabled = true; b.style.opacity = '.6'; b.style.cursor = 'default'; }
+    }
   }, 120);
 }
 function toast(text) {
@@ -1048,15 +1054,18 @@ function renderShopUI() {
     <div class="sh-bottom">
       <div class="sh-wallet"><small>我的钱包</small><span id="shWalletVal">${fmt(me ? me.wallet : 0)}</span></div>
       <div class="sh-chips">${chips}</div>
-      ${NET.isHost
-        ? `<button class="primary ${done ? 'ready' : ''}" id="shEnd">${done ? '开始第 ' + (s.round + 1) + ' 轮' : '结束购物'}</button>`
-        : `<button class="primary" id="shEnd" disabled style="opacity:.6;cursor:default">等待房主</button>`}
+      ${done
+        ? `<button class="primary" id="shEnd" disabled style="opacity:.6;cursor:default">即将进入下一轮…</button>`
+        : (NET.isHost
+          ? `<button class="primary" id="shEnd">结束购物</button>`
+          : `<button class="primary" id="shEnd" disabled style="opacity:.6;cursor:default">等待房主</button>`)}
     </div>
+    <div class="sh-over" id="shOver">购物时间结束</div>
   </div>`);
   if ($('#shEnd') && NET.isHost) $('#shEnd').onclick = () => {
     if (!currSnap || !currSnap.shop) return;
     const d = !!currSnap.shop.done || currSnap.shop.timeLeft <= 0 || currSnap.shop.offers.every(o => o.soldTo !== null);
-    if (d) flow(PROTO.FLOW.NEXT_ROUND);
+    if (d) toast('正在进入下一轮…');
     else toast('抢购进行中，等倒计时结束或商品售罄');
   };
 }

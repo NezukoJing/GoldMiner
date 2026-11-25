@@ -21,7 +21,8 @@
   const W = 1280, H = 720, GROUND = 160, TOPBAR = 44;
   const DEG = Math.PI / 180, MAXA = 75 * DEG, SWING_SPEED = 65 * DEG,
     EXT_SPEED = 420, PULL_BASE = 300, RET_EMPTY = 420, MAX_LEN = 1240,
-    SHOW_TIME = 1, L0 = 26, HOOK_R = 8, POWER_MUL = 1.5;
+    SHOW_TIME = 1, L0 = 26, HOOK_R = 8, POWER_MUL = 1.5,
+    SHOP_END_DELAY = 1.4, SHOP_RET_MUL = 2;
   const TEAM = [{ name: '红队', c: '#e5484d' }, { name: '蓝队', c: '#3b82f6' }];
   const KEYS1 = [{ fire: 'KeyS', bomb: 'KeyW' }, { fire: 'ArrowDown', bomb: 'ArrowUp' }];
   const KEYS2 = [{ fire: 'KeyS', bomb: 'KeyW' }, { fire: 'KeyG', bomb: 'KeyT' },
@@ -361,7 +362,8 @@
           break;
         }
       } else if (h.state === 'retract') {
-        const sp = h.item ? this.pullSpeed(p, h.item) : RET_EMPTY;
+        let sp = h.item ? this.pullSpeed(p, h.item) : RET_EMPTY;
+        if (this.G.phase === 'shop') sp *= SHOP_RET_MUL;
         h.len -= sp * dt; p.reel += sp * dt / 9;
         if (h.item) {
           const tip = this.tipOf(p), off = h.item.r * .55;
@@ -450,13 +452,18 @@
         if (Math.ceil(G.timeLeft) < prev && G.timeLeft <= 5 && G.timeLeft > 0) this.fx('sfx', { k: 'tick' });
         if (G.timeLeft <= 0) { G.timeLeft = 0; this.endRound(); return; }
       } else if (G.phase === 'shop') {
-        if (G.shop && !G.shop.done) {
-          const prev = Math.ceil(G.shop.timeLeft); G.shop.timeLeft -= dt;
-          if (Math.ceil(G.shop.timeLeft) < prev && G.shop.timeLeft <= 5 && G.shop.timeLeft > 0) this.fx('sfx', { k: 'tick' });
+        const s = G.shop;
+        if (s && !s.done) {
+          const prev = Math.ceil(s.timeLeft); s.timeLeft -= dt;
+          if (Math.ceil(s.timeLeft) < prev && s.timeLeft <= 5 && s.timeLeft > 0) this.fx('sfx', { k: 'tick' });
           if (this.shopDone()) {
-            G.shop.done = true; G.shop.timeLeft = Math.max(0, G.shop.timeLeft);
+            s.done = true; s.timeLeft = Math.max(0, s.timeLeft); s.endT = SHOP_END_DELAY;
+            G.banner = { text: '购物时间结束', t: 0 };
             this.fx('sfx', { k: 'end' });
           }
+        } else if (s && !s.ended) {
+          s.endT -= dt;
+          if (s.endT <= 0) { s.ended = true; this.startRound(); }
         }
       } else {
         // result / roundEnd / final：物理仍推进一点（让展示期的钩子/粒子自然），但不计时
@@ -538,7 +545,7 @@
       const n = offers.length, xMin = 130, xMax = W - 130;
       const goods = offers.map((o, i) => this.makeShopItem(o, n === 1 ? W / 2 : xMin + i * (xMax - xMin) / (n - 1), 344));
       G.items = goods;                       // 柜台上的商品直接作为可抓物品
-      G.shop = { offers, log: {}, timeLeft: 30, done: false };
+      G.shop = { offers, log: {}, timeLeft: 20, done: false, endT: 0, ended: false };
       G.players.forEach(p => { this.resetHook(p); });
       this.shopToken++;
     }
@@ -620,7 +627,8 @@
         })),
         shop: G.shop ? {
           offers: clone(G.shop.offers), log: clone(G.shop.log),
-          timeLeft: G.shop.timeLeft, done: G.shop.done
+          timeLeft: G.shop.timeLeft, done: G.shop.done,
+          endT: G.shop.endT, ended: G.shop.ended
         } : null
       };
     }
