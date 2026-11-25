@@ -49,8 +49,8 @@
   return {
     MSG, FLOW, PHASE,
     TICK_HZ: 30,                 // 服务器权威步长
-    SNAPSHOT_HZ: 20,             // 快照广播频率
-    INTERP_DELAY_MS: 100,        // 客户端插值缓冲（约 2~3 个快照）
+    SNAPSHOT_HZ: 30,             // 快照广播频率（与逻辑步长对齐，降低操作延迟）
+    INTERP_DELAY_MS: 60,         // 客户端插值缓冲（约 2 个快照，降低画面延迟）
     ROOM_CODE_LEN: 4,
     MAX_PLAYERS: 4
   };
