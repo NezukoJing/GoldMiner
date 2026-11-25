@@ -702,8 +702,28 @@ function bindQtyPanel(editable) {
     send();
   });
 }
+/* 预热大字字形：避免 countdown 首帧首次栅格化 + 描边造成的一次性尖峰（~6ms） */
+let fontsPrewarmed = false;
+function prewarmFonts() {
+  if (fontsPrewarmed) return;
+  fontsPrewarmed = true;
+  try {
+    const c = document.createElement('canvas').getContext('2d');
+    const draw = (text, size) => {
+      c.font = `900 ${size}px ${FONT}`;
+      c.lineWidth = 10; c.strokeStyle = '#5a3008'; c.textAlign = 'center'; c.textBaseline = 'middle';
+      c.strokeText(text, 0, 0); c.fillStyle = '#fff3c4'; c.fillText(text, 0, 0);
+    };
+    // countdown 字号（36/96）与 play 字幕字号（80/72），预热全部实际字串
+    for (let r = 1; r <= 7; r++) draw('第 ' + r + ' 轮', 36);
+    ['1', '2', '3', '10'].forEach(s => draw(s, 96));
+    draw('开挖！', 80);
+    ['时间到！', '矿区已清空！'].forEach(s => draw(s, 72));
+  } catch (e) { /* 预热失败不影响游戏 */ }
+}
 function onStarted(m) {
   NET.started = true;
+  prewarmFonts();
   hideOv();
   toast('对局开始 · 种子 ' + m.seedId);
 }
