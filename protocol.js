@@ -14,11 +14,16 @@
     START: 'start',         // 房主开始对局
     INPUT: 'input',         // {act:'fire'|'bomb'} 玩家操作
     FLOW: 'flow',           // {act, i?} 流程推进（见 FLOW）
+    SWAP_REQ: 'swapReq',    // {target} 请求换座（空座直接移动，有人座发申请）
+    SWAP_ANS: 'swapAns',    // {accept} 被申请方应答换座请求
+    SWAP_CANCEL: 'swapCancel', // 发起方撤回换座申请
     PING: 'ping',
     // 服务器 -> 客户端
     ROOM: 'room',           // {code, seat, isHost, players[], cfg, phase}
     STARTED: 'started',     // {seedId, cfg}
     STATE: 'state',         // 权威快照（见 game-core.serialize）
+    SWAP_OFFER: 'swapOffer', // {from, name, target} 有人请求与你换座
+    SWAP_DECLINE: 'swapDecline', // 换座申请被拒绝/撤回
     EVENT: 'event',         // 一次性事件 {kind, ...}（如 toast）
     ERROR: 'error',         // {msg}
     PONG: 'pong'

@@ -67,6 +67,7 @@ class Room {
     this.roundEndT = 0;                   // roundEnd 停留计时
     this.lastTick = Date.now();
     this.acc = 0;
+    this.pendingSwap = null;              // {fromId,toId,fromSeat,toSeat} 换座申请
     this.addPlayer(hostSocket, name);
   }
   get nSeats() { return this.cfg.mode === '2v2' ? 4 : 2; }
@@ -88,6 +89,55 @@ class Room {
   publicPlayers() {
     return this.seats.slice(0, this.nSeats).map((s, i) =>
       s ? { seat: i, name: s.name, connected: s.connected, host: s.id === this.hostId } : null);
+  }
+  /* ---- 换座：空座直接移动，有人座发申请，同意后交换 ---- */
+  swapSeats(a, b) {
+    const sa = this.seats[a], sb = this.seats[b];
+    this.seats[a] = sb; this.seats[b] = sa;
+    if (sa) { sa.seat = b; const s = io.sockets.sockets.get(sa.id); if (s) s.data.seat = b; }
+    if (sb) { sb.seat = a; const s = io.sockets.sockets.get(sb.id); if (s) s.data.seat = a; }
+  }
+  tell(socketId, text) { const s = io.sockets.sockets.get(socketId); if (s) s.emit(P.MSG.EVENT, { kind: 'toast', text }); }
+  requestSwap(socket, rawTarget) {
+    if (this.started) { socket.emit(P.MSG.ERROR, { msg: '对局已开始，无法换座' }); return; }
+    const from = this.seatOf(socket.id);
+    const target = Number(rawTarget);
+    if (from < 0 || !Number.isInteger(target) || target < 0 || target >= this.nSeats || target === from) return;
+    if (this.pendingSwap) { socket.emit(P.MSG.ERROR, { msg: '已有换座申请处理中，请稍候' }); return; }
+    const occupant = this.seats[target];
+    if (!occupant || !occupant.connected) {
+      // 空座（含 AI 补位）直接移动
+      this.swapSeats(from, target);
+      this.sendRoomAll();
+      this.tell(socket.id, `已移动到座位 ${target + 1}`);
+      return;
+    }
+    // 目标有人：发起申请
+    this.pendingSwap = { fromId: socket.id, toId: occupant.id, fromSeat: from, toSeat: target };
+    socket.emit(P.MSG.EVENT, { kind: 'toast', text: `已向 ${occupant.name} 发送换座申请` });
+    const toSock = io.sockets.sockets.get(occupant.id);
+    if (toSock) toSock.emit(P.MSG.SWAP_OFFER, { from: from, target: target, name: this.seats[from].name });
+  }
+  answerSwap(socketId, accept) {
+    const p = this.pendingSwap;
+    if (!p || socketId !== p.toId) return;
+    this.pendingSwap = null;
+    if (accept && this.seats[p.fromSeat] && this.seats[p.toSeat]) {
+      const fromName = this.seats[p.fromSeat].name, toName = this.seats[p.toSeat].name;
+      this.swapSeats(p.fromSeat, p.toSeat);
+      this.sendRoomAll();
+      this.tell(p.fromId, `已与 ${toName} 交换座位`);
+      this.tell(p.toId, `已与 ${fromName} 交换座位`);
+    } else {
+      const toSock = io.sockets.sockets.get(p.fromId);
+      if (toSock) toSock.emit(P.MSG.SWAP_DECLINE, {});
+    }
+  }
+  cancelSwap(socketId) {
+    if (this.pendingSwap && this.pendingSwap.fromId === socketId) this.pendingSwap = null;
+  }
+  clearSwapFor(socketId) {
+    if (this.pendingSwap && (this.pendingSwap.fromId === socketId || this.pendingSwap.toId === socketId)) this.pendingSwap = null;
   }
   roomMsg(socketId) {
     return {
@@ -159,6 +209,7 @@ class Room {
   }
   // 断线托管：把该座位玩家改为普通 AI，避免流程卡住
   handleDisconnect(socketId) {
+    this.clearSwapFor(socketId);
     const seat = this.seatOf(socketId);
     if (seat < 0) return;
     const s = this.seats[seat];
@@ -294,6 +345,18 @@ io.on('connection', socket => {
     if (!r || !r.isHost(socket.id)) { socket.emit(P.MSG.ERROR, { msg: '仅房主可调整配置' }); return; }
     if (r.started) { socket.emit(P.MSG.ERROR, { msg: '对局已开始，配置已锁定' }); return; }
     r.setCfg(socket.id, msg || {});
+  });
+  socket.on(P.MSG.SWAP_REQ, msg => {
+    const r = rooms.get(socket.data.room);
+    if (r) r.requestSwap(socket, msg && msg.target);
+  });
+  socket.on(P.MSG.SWAP_ANS, msg => {
+    const r = rooms.get(socket.data.room);
+    if (r) r.answerSwap(socket.id, !!(msg && msg.accept));
+  });
+  socket.on(P.MSG.SWAP_CANCEL, () => {
+    const r = rooms.get(socket.data.room);
+    if (r) r.cancelSwap(socket.id);
   });
   socket.on(P.MSG.INPUT, msg => { const r = rooms.get(socket.data.room); if (r) r.onInput(socket, msg || {}); });
   socket.on(P.MSG.FLOW, msg => { const r = rooms.get(socket.data.room); if (r) r.onFlow(socket, msg || {}); });

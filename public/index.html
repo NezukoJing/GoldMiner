@@ -720,6 +720,8 @@ function connect() {
   s.on(PROTO.MSG.ROOM, onRoom);
   s.on(PROTO.MSG.STARTED, onStarted);
   s.on(PROTO.MSG.STATE, onState);
+  s.on(PROTO.MSG.SWAP_OFFER, onSwapOffer);
+  s.on(PROTO.MSG.SWAP_DECLINE, () => toast('对方拒绝了换座申请'));
   s.on(PROTO.MSG.EVENT, e => { if (e.kind === 'toast') toast(e.text); });
   s.on(PROTO.MSG.ERROR, e => toast('✗ ' + (e.msg || '出错了')));
   return s;
@@ -737,6 +739,7 @@ function flow(act, i) { emit(PROTO.MSG.FLOW, { act, i }); }
 /* ---------------- 服务器消息 ---------------- */
 function onRoom(m) {
   NET.room = m.code; NET.seat = m.seat; NET.isHost = m.isHost;
+  if (m.started) closeSwapOffer(); // 开局时若有换座弹窗，关掉
   NET.myName = NET.myName || '';
   NET.started = m.started; NET.phase = m.phase;
   const hp = (m.players || []).find(p => p && p.host);
@@ -973,14 +976,46 @@ function fallbackCopy(text, done, fail) {
   } catch (e) { fail(); }
 }
 
+/* ---- 换座交互 ---- */
+function onSeatClick(i) {
+  if (NET.started) return;
+  if (i === NET.seat) { toast('这是你当前的座位'); return; }
+  emit(PROTO.MSG.SWAP_REQ, { target: i });
+}
+function onSwapOffer(msg) {
+  const who = esc(msg && msg.name || '对方');
+  let box = document.querySelector('#swapOfferBox');
+  if (box) box.remove();
+  box = document.createElement('div');
+  box.id = 'swapOfferBox';
+  box.style.cssText = 'position:absolute;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;background:rgba(46,24,6,.45)';
+  box.innerHTML = `<div style="background:linear-gradient(#fffdf6,#fff4dc);border:3px solid #e0a53c;border-radius:18px;box-shadow:0 14px 40px rgba(50,25,0,.4);padding:24px 30px;color:#4a2c10;text-align:center;max-width:420px">
+    <div style="font-size:20px;font-weight:800;margin-bottom:10px">换座申请</div>
+    <div style="font-size:15px;margin-bottom:18px">${who} 想和你交换座位，是否同意？</div>
+    <div style="display:flex;gap:16px;justify-content:center">
+      <button id="swapYes" class="primary" style="padding:10px 28px">同意</button>
+      <button id="swapNo" class="btn" style="padding:10px 28px">拒绝</button>
+    </div></div>`;
+  document.body.appendChild(box);
+  const close = () => { if (box.parentNode) box.parentNode.removeChild(box); };
+  box.querySelector('#swapYes').onclick = () => { close(); emit(PROTO.MSG.SWAP_ANS, { accept: true }); };
+  box.querySelector('#swapNo').onclick = () => { close(); emit(PROTO.MSG.SWAP_ANS, { accept: false }); };
+}
+function closeSwapOffer() { const box = document.querySelector('#swapOfferBox'); if (box && box.parentNode) box.parentNode.removeChild(box); }
+
 /* ---- 大厅 / 房间等待 ---- */
 function renderLobbyOrRoom(m) {
   // 保留滚动位置：调整档位会触发服务器回广播 ROOM 而重建面板，恢复滚动避免跳回顶部
   const prevPanel = ov.querySelector('.panel');
   const scrollTop = prevPanel ? prevPanel.scrollTop : 0;
-  const players = m.players.map((p, i) => p
-    ? `<div class="seat on"><b>${esc(p.name)}</b>${p.host ? ' <span class="host">房主</span>' : ''}${!p.connected ? ' <span class="off">离线</span>' : ''}</div>`
-    : `<div class="seat">座位 ${i + 1} · 空（电脑补位）</div>`).join('');
+  const players = m.players.map((p, i) => {
+    const self = i === m.seat;
+    const tip = self ? '你当前的座位' : (p ? `点击申请与 ${esc(p.name)} 换座` : `点击移动到座位 ${i + 1}`);
+    const clickable = m.started ? '' : `onclick="onSeatClick(${i})" style="cursor:pointer"`;
+    return p
+      ? `<div class="seat on" title="${tip}" ${clickable}><b>${esc(p.name)}</b>${p.host ? ' <span class="host">房主</span>' : ''}${!p.connected ? ' <span class="off">离线</span>' : ''}${self ? ' <span class="dim" style="font-size:11px">（你）</span>' : ''}</div>`
+      : `<div class="seat" title="${tip}" ${clickable}>座位 ${i + 1} · 空（电脑补位）</div>`;
+  }).join('');
   let cfgUI = '';
   if (m.isHost) {
     cfgUI = `
