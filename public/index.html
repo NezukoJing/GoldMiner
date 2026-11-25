@@ -678,6 +678,7 @@ function drawIcon(cv2){
 /* ---------------- 联机状态 ---------------- */
 const NET = { socket: null, room: null, seat: -1, isHost: false, phase: '', started: false };
 const CONFIG = JSON.parse(JSON.stringify(DEFAULT_CFG));
+CONFIG.qtyOpen = false; // 联机大厅物品数量面板默认收起
 let G = {
   phase: 'setup', demo: false, players: [], items: [], fx: [], parts: [], floats: [],
   sticks: [], time: 0, round: 0, points: [0, 0], history: [], timeLeft: 0,
@@ -935,6 +936,9 @@ function netBar() {
 
 /* ---- 大厅 / 房间等待 ---- */
 function renderLobbyOrRoom(m) {
+  // 保留滚动位置：调整档位会触发服务器回广播 ROOM 而重建面板，恢复滚动避免跳回顶部
+  const prevPanel = ov.querySelector('.panel');
+  const scrollTop = prevPanel ? prevPanel.scrollTop : 0;
   const players = m.players.map((p, i) => p
     ? `<div class="seat on"><b>${esc(p.name)}</b>${p.host ? ' <span class="host">房主</span>' : ''}${!p.connected ? ' <span class="off">离线</span>' : ''}</div>`
     : `<div class="seat">座位 ${i + 1} · 空（电脑补位）</div>`).join('');
@@ -969,6 +973,7 @@ function renderLobbyOrRoom(m) {
     <div class="center dim" style="margin-top:12px;font-size:13px">把房间号发给好友，在他们的页面点「加入房间」输入此号</div>
     ${m.isHost ? '<div class="center" style="margin-top:8px"><button class="btn" id="leaveRoom">解散房间</button></div>' : '<div class="center" style="margin-top:8px"><button class="btn" id="leaveRoom">离开房间</button></div>'}
   </div>`);
+  const newPanel = ov.querySelector('.panel'); if (newPanel) newPanel.scrollTop = scrollTop;
   ov.querySelectorAll('[data-k]').forEach(b => b.onclick = () => {
     let v = b.dataset.v; const k = b.dataset.k;
     if (k === 'rounds' || k === 'roundTime') v = +v;
