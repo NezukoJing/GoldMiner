@@ -676,7 +676,8 @@ function drawIcon(cv2){
 'use strict';
 
 /* ---------------- 联机状态 ---------------- */
-const NET = { socket: null, room: null, seat: -1, isHost: false, phase: '', started: false };
+const NET = { socket: null, room: null, seat: -1, isHost: false, phase: '', started: false, hostName: '' };
+const INVITE_URL = 'https://gold-miner-online-rge7.onrender.com/';
 const CONFIG = JSON.parse(JSON.stringify(DEFAULT_CFG));
 CONFIG.qtyOpen = false; // 联机大厅物品数量面板默认收起
 let gmUnlocked = false; // GM 指令解锁物品概率调整面板（本地 UI 开关，调档位重绘不丢）
@@ -738,6 +739,8 @@ function onRoom(m) {
   NET.room = m.code; NET.seat = m.seat; NET.isHost = m.isHost;
   NET.myName = NET.myName || '';
   NET.started = m.started; NET.phase = m.phase;
+  const hp = (m.players || []).find(p => p && p.host);
+  if (hp) NET.hostName = hp.name || ''; // 记录房主名，供邀请文案使用
   if (m.cfg) { // 以服务器权威配置为准（尤其非房主看到房主的档位设定）
     if (m.cfg.counts) CONFIG.counts = JSON.parse(JSON.stringify(m.cfg.counts));
     if (m.cfg.mode) CONFIG.mode = m.cfg.mode;
@@ -944,7 +947,30 @@ function toast(text) {
   clearTimeout(t._timer); t._timer = setTimeout(() => t.classList.remove('show'), 2200);
 }
 function netBar() {
-  return `<div class="netbar">房间 <b id="roomCode">${NET.room || '----'}</b> · 座位 <b>${NET.seat >= 0 ? 'P' + (NET.seat + 1) : '--'}</b>${NET.isHost ? ' · 房主' : ''}</div>`;
+  const copyBtn = NET.room ? ` <button type="button" onclick="copyInvite()" title="复制邀请链接" style="margin-left:8px;padding:2px 9px;font-size:12px;cursor:pointer;border:1px solid #e0a53c;border-radius:8px;background:#fff8e8;color:#a4630a">⧉ 复制邀请</button>` : '';
+  return `<div class="netbar">房间 <b id="roomCode">${NET.room || '----'}</b>${copyBtn} · 座位 <b>${NET.seat >= 0 ? 'P' + (NET.seat + 1) : '--'}</b>${NET.isHost ? ' · 房主' : ''}</div>`;
+}
+/* 生成并复制邀请文案：Anyone 打开链接即可输入房间号加入 */
+function copyInvite() {
+  const code = NET.room || '----', host = NET.hostName || '房主';
+  const text = `${INVITE_URL}，打开网页，输入${code}加入${host}的黄金矿工联机对局吧`;
+  const done = () => toast('✓ 邀请文案已复制，发给好友吧');
+  const fail = () => toast('复制失败，请手动选择文本');
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text, done, fail));
+    } else fallbackCopy(text, done, fail);
+  } catch (e) { fallbackCopy(text, done, fail); }
+}
+function fallbackCopy(text, done, fail) {
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.left = '-9999px';
+    document.body.appendChild(ta); ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    ok ? done() : fail();
+  } catch (e) { fail(); }
 }
 
 /* ---- 大厅 / 房间等待 ---- */
