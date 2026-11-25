@@ -1020,6 +1020,8 @@ function renderLobbyOrRoom(m) {
     if (k === 'rounds' || k === 'roundTime') v = +v;
     CONFIG[k] = v;
     const seg = b.parentElement; seg.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+    // 立即同步给服务器：模式切换要重建座位（1v1↔2v2），服务端广播 ROOM 后所有人座位一致
+    if (m.isHost) emit(PROTO.MSG.SET_CFG, { cfg: CONFIG });
   });
   if ($('#cfgSeed')) $('#cfgSeed').oninput = e => CONFIG.seed = e.target.value;
   if ($('#cfgSeedBtn')) $('#cfgSeedBtn').onclick = () => {
