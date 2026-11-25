@@ -680,6 +680,7 @@ const NET = { socket: null, room: null, seat: -1, isHost: false, phase: '', star
 const CONFIG = JSON.parse(JSON.stringify(DEFAULT_CFG));
 CONFIG.qtyOpen = false; // 联机大厅物品数量面板默认收起
 let gmUnlocked = false; // GM 指令解锁物品概率调整面板（本地 UI 开关，调档位重绘不丢）
+let gmCode = ''; // GM 指令真实输入（界面用 * 掩码显示，重建面板时保留）
 let G = {
   phase: 'setup', demo: false, players: [], items: [], fx: [], parts: [], floats: [],
   sticks: [], time: 0, round: 0, points: [0, 0], history: [], timeLeft: 0,
@@ -970,7 +971,7 @@ function renderLobbyOrRoom(m) {
         ${[30, 45, 60].map(v => `<button data-k="roundTime" data-v="${v}" class="${CONFIG.roundTime === v ? 'on' : ''}">${v}秒</button>`).join('')}</div></div>
       <div class="row"><label>随机种子</label><input id="cfgSeed" maxlength="24" placeholder="留空随机" value="${esc(CONFIG.seed || '')}" class="seed-input">
         <button class="btn" id="cfgSeedBtn">🎲</button></div>
-      <div class="row"><label>GM 指令</label><input id="gmInput" maxlength="24" placeholder="输入 GM 指令解锁高级设置" class="seed-input">
+      <div class="row"><label>GM 指令</label><input id="gmInput" type="text" autocomplete="off" maxlength="24" placeholder="输入 GM 指令解锁高级设置" class="seed-input">
         <button class="btn" id="gmBtn">解锁</button><span class="gm-tip" id="gmTip"></span></div>
       <div id="qtyHolder"></div>
       <div class="center" style="margin-top:10px"><button class="primary" id="netStart">开始对局</button></div>`;
@@ -1006,8 +1007,21 @@ function renderLobbyOrRoom(m) {
   };
   if (m.isHost) {
     const gmInput = $('#gmInput');
+    if (gmInput) {
+      gmInput.value = '*'.repeat(gmCode.length); // 面板重建后恢复掩码长度
+      gmInput.oninput = () => {
+        // 以显示长度为准维护真实指令：退格/删减取前 n 位，新增取末位真实字符
+        const v = gmInput.value, n = v.length;
+        if (n < gmCode.length) gmCode = gmCode.slice(0, n);
+        else if (n > gmCode.length) {
+          const added = v.replace(/\*/g, '').slice(-(n - gmCode.length));
+          gmCode = (gmCode + added).slice(0, 24);
+        }
+        gmInput.value = '*'.repeat(gmCode.length);
+      };
+    }
     const tryGm = () => {
-      if (gmInput && gmInput.value.trim() === 'jyfnb') {
+      if (gmCode.trim() === 'jyfnb') {
         gmUnlocked = true;
         renderQtyArea(true); // 只重绘画板区，不重建整页，避免滚动跳动
         const tip = $('#gmTip'); if (tip) { tip.textContent = '✓ 已解锁'; tip.style.color = '#2e7d32'; }
