@@ -953,7 +953,7 @@ function netBar() {
 /* 生成并复制邀请文案：Anyone 打开链接即可输入房间号加入 */
 function copyInvite() {
   const code = NET.room || '----', host = NET.hostName || '房主';
-  const text = `${INVITE_URL}，打开网页，输入${code}加入${host}的黄金矿工联机对局吧`;
+  const text = `${host}在${INVITE_URL}建立了一个黄金矿工对抗版的房间，打开网页，输入房间号${code}加入他的房间吧！`;
   const done = () => toast('✓ 邀请文案已复制，发给好友吧');
   const fail = () => toast('复制失败，请手动选择文本');
   try {
