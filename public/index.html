@@ -155,7 +155,9 @@ kbd{display:inline-block;min-width:20px;padding:1px 5px;border:1.5px solid #c9b1
 .net{position:absolute;right:12px;top:10px;font:13px "Microsoft YaHei",sans-serif;padding:4px 10px;border-radius:8px;z-index:9}
 .net.ok{background:#e6f7ea;color:#1a7a3a;border:1px solid #8fd0a5}
 .net.off{background:#fdeaea;color:#a11;border:1px solid #e59}
-.seats{display:flex;flex-direction:column;gap:6px;margin:10px 0}
+.seats{display:flex;flex-direction:row;gap:10px;margin:10px 0;align-items:stretch}
+.team-col{flex:1;min-width:0;border:2px solid;border-radius:12px;padding:8px;background:#fffdf6;display:flex;flex-direction:column;gap:6px}
+.team-col-h{text-align:center;font-weight:800;font-size:15px;letter-spacing:1px;padding:2px 0 5px;border-bottom:1px dashed #e6c98a;margin-bottom:2px}
 .seat{border:2px dashed #d9b877;border-radius:10px;padding:8px 12px;color:#a98a5c;font-size:14px;background:#fffaf0}
 .seat.on{border-style:solid;border-color:#e0a53c;color:#6b4214;background:#fff6dd}
 .seat .host{color:#c07400;font-weight:bold}
@@ -688,7 +690,9 @@ let G = {
   countdown: 0, paused: false, shake: 0, banner: null, goFlash: 0,
   cfg: { rounds: 7, mode: '1v1' }, seedId: '', clearEarly: 0, matchWinner: -2, shop: null
 };
-const KEYS = { '1v1': KEYS1, '2v2': KEYS2 };
+// 联机：每位玩家都在自己的电脑上操作自己的矿工，统一 S 出钩 / W 炸药（不再按座位分键位）
+const SOLO_KEYS = { fire: 'KeyS', bomb: 'KeyW' };
+const KEYS = { '1v1': [SOLO_KEYS, SOLO_KEYS], '2v2': [SOLO_KEYS, SOLO_KEYS, SOLO_KEYS, SOLO_KEYS] };
 let prevSnap = null, currSnap = null, prevAt = 0, currAt = 0;
 let lastUIPhase = '', lastUIRound = -1, reconnected = false;
 /* 计分模式辅助：drawHUD/结算页共用（与 game-core 同规则） */
@@ -1008,14 +1012,26 @@ function renderLobbyOrRoom(m) {
   // 保留滚动位置：调整档位会触发服务器回广播 ROOM 而重建面板，恢复滚动避免跳回顶部
   const prevPanel = ov.querySelector('.panel');
   const scrollTop = prevPanel ? prevPanel.scrollTop : 0;
-  const players = m.players.map((p, i) => {
+  // 座位按队伍分栏：座位号 %2 → 0 红队、1 蓝队（与服务端 team 分配一致）。
+  // 只改视觉分组，座位号 i 与 onSeatClick(i) 的换座逻辑完全不变。
+  const renderSeat = i => {
+    const p = m.players[i];
     const self = i === m.seat;
     const tip = self ? '你当前的座位' : (p ? `点击申请与 ${esc(p.name)} 换座` : `点击移动到座位 ${i + 1}`);
     const clickable = m.started ? '' : `onclick="onSeatClick(${i})" style="cursor:pointer"`;
     return p
       ? `<div class="seat on" title="${tip}" ${clickable}><b>${esc(p.name)}</b>${p.host ? ' <span class="host">房主</span>' : ''}${!p.connected ? ' <span class="off">离线</span>' : ''}${self ? ' <span class="dim" style="font-size:11px">（你）</span>' : ''}</div>`
       : `<div class="seat" title="${tip}" ${clickable}>座位 ${i + 1} · 空（电脑补位）</div>`;
-  }).join('');
+  };
+  const teamCol = (team, label) => {
+    const c = TEAM[team].c;
+    const idxs = m.players.map((_, i) => i).filter(i => i % 2 === team);
+    return `<div class="team-col" style="border-color:${c}">
+      <div class="team-col-h" style="color:${c}">${label}</div>
+      ${idxs.map(renderSeat).join('')}
+    </div>`;
+  };
+  const players = `<div class="seats">${teamCol(0, '红队')}${teamCol(1, '蓝队')}</div>`;
   let cfgUI = '';
   if (m.isHost) {
     cfgUI = `
@@ -1112,7 +1128,7 @@ function renderLobby() {
       <input id="joinCode" maxlength="4" placeholder="如 A7K2" class="seed-input" style="text-transform:uppercase">
       <button class="btn" id="btnJoinGo">进入</button></div>
     <div class="rules" style="margin-top:16px">
-      出钩 <kbd>S</kbd> / <kbd>↓</kbd>　炸药 <kbd>W</kbd> / <kbd>↑</kbd>　2v2 另有 <kbd>G</kbd><kbd>T</kbd> / <kbd>K</kbd><kbd>I</kbd><br>
+      每位玩家：<kbd>S</kbd> 出钩　<kbd>W</kbd> 扔炸药<br>
       所有操作由服务器裁决，保证多人画面一致 · M 静音
     </div>
   </div>`);
