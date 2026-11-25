@@ -114,6 +114,7 @@ class Room {
     if ([30, 45, 60].includes(+c.roundTime)) this.cfg.roundTime = +c.roundTime;
     if (typeof c.seed === 'string') this.cfg.seed = c.seed.slice(0, 24);
     if (typeof c.early === 'boolean') this.cfg.early = c.early;
+    if (['round', 'total'].includes(c.scoreMode)) this.cfg.scoreMode = c.scoreMode;
     this.sendRoomAll();
     return true;
   }
@@ -319,13 +320,14 @@ function normalizeCfg(c) {
   const roundTime = [30, 45, 60].includes(+c.roundTime) ? +c.roundTime : 60;
   const seed = typeof c.seed === 'string' ? c.seed.slice(0, 24) : '';
   const early = !!c.early;
+  const scoreMode = ['round', 'total'].includes(c.scoreMode) ? c.scoreMode : 'round';
   const counts = {};
   for (const t of Object.keys(require('./game-core').ITEM_TYPES.reduce((o, x) => (o[x] = 1, o), {}))) {
     if (['none', 'few', 'normal', 'many'].includes(c.counts && c.counts[t])) counts[t] = c.counts[t];
   }
   const nm = (arr, i, def) => (c[arr] && c[arr][i] && String(c[arr][i].name || '').slice(0, 6)) || def;
   return {
-    mode, rounds, roundTime, seed, early, counts,
+    mode, rounds, roundTime, seed, early, scoreMode, counts,
     red: [{ name: nm('red', 0, '红1'), ctrl: 'human' }, { name: nm('red', 1, '红2'), ctrl: 'ai-normal' }],
     blue: [{ name: nm('blue', 0, '蓝1'), ctrl: 'ai-normal' }, { name: nm('blue', 1, '蓝2'), ctrl: 'ai-normal' }]
   };

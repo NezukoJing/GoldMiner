@@ -58,7 +58,7 @@
     'rock_s', 'rock_l', 'bone', 'skull', 'bag', 'mouse', 'pig', 'tnt'];
   const QTY_LEVELS = ['none', 'few', 'normal', 'many'];
   const DEFAULT_CFG = {
-    mode: '1v1', rounds: 7, roundTime: 60, early: false, seed: '', counts: {},
+    mode: '1v1', rounds: 7, roundTime: 60, early: false, seed: '', counts: {}, scoreMode: 'round',
     red: [{ name: '红1', ctrl: 'human' }, { name: '红2', ctrl: 'ai-normal' }],
     blue: [{ name: '蓝1', ctrl: 'ai-normal' }, { name: '蓝2', ctrl: 'ai-normal' }]
   };
@@ -503,7 +503,9 @@
       G.timeLeft = this.cfg.roundTime; G.countdown = 3; G.phase = 'countdown';
     }
     teamSums() { const s = [0, 0]; this.G.players.forEach(p => s[p.team] += p.cur); return s; }
-    isLocked() { const G = this.G, rem = G.cfg.rounds - G.round; return Math.abs(G.points[0] - G.points[1]) > rem; }
+    isTotal() { return this.G.cfg && this.G.cfg.scoreMode === 'total'; }
+    grandTotals() { const s = [0, 0]; this.G.players.forEach(p => { s[p.team] += sum(p.roundValues) + p.cur; }); return s; }
+    isLocked() { if (this.isTotal()) return false; const G = this.G, rem = G.cfg.rounds - G.round; return Math.abs(G.points[0] - G.points[1]) > rem; }
     endRound(reason) {
       const G = this.G;
       G.phase = 'roundEnd'; G.clearEarly = reason === 'clear' ? Math.ceil(G.timeLeft) : 0;
@@ -514,7 +516,7 @@
       G.banner = { text: G.clearEarly ? '矿区已清空！' : '时间到！', t: 0 };
       this.fx('sfx', { k: 'end' });
     }
-    matchOver() { const G = this.G; return G.round >= G.cfg.rounds || (G.cfg.early && this.isLocked()); }
+    matchOver() { const G = this.G; if (G.round >= G.cfg.rounds) return true; return !this.isTotal() && G.cfg.early && this.isLocked(); }
     toResult() { this.G.phase = 'result'; this.G.banner = null; }
 
     /* ---------- 商店：所有玩家同时出钩抢购柜台上的商品 ---------- */
@@ -594,6 +596,7 @@
       const pts = G.points, tot = [0, 0]; G.players.forEach(p => tot[p.team] += sum(p.roundValues));
       let w = pts[0] > pts[1] ? 0 : pts[1] > pts[0] ? 1 : -1;
       if (w < 0 && tot[0] !== tot[1]) w = tot[0] > tot[1] ? 0 : 1;
+      if (this.isTotal()) w = tot[0] > tot[1] ? 0 : tot[1] > tot[0] ? 1 : -1;
       G.matchWinner = w;
       if (w >= 0) this.fx('sfx', { k: 'win' });
     }
@@ -604,6 +607,7 @@
       const G = this.G;
       return {
         phase: G.phase, round: G.round, rounds: this.cfg.rounds, mode: this.cfg.mode,
+        scoreMode: this.cfg.scoreMode || 'round',
         seedId: G.seedId, timeLeft: G.timeLeft, countdown: G.countdown,
         points: G.points.slice(), history: clone(G.history),
         clearEarly: G.clearEarly, matchWinner: G.matchWinner,

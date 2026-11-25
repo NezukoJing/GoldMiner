@@ -328,7 +328,7 @@ function buildBG(k){
 }
 
 
-const DEFAULT_CFG={mode:'1v1',rounds:7,roundTime:60,early:false,seed:'',counts:{},
+const DEFAULT_CFG={mode:'1v1',rounds:7,roundTime:60,early:false,seed:'',counts:{},scoreMode:'round',
   red:[{name:'红1',ctrl:'human'},{name:'红2',ctrl:'ai-normal'}],
   blue:[{name:'蓝1',ctrl:'ai-normal'},{name:'蓝2',ctrl:'ai-normal'}]};
 const QTY_LEVELS=[['none','不出现'],['few','少量'],['normal','正常'],['many','大量']];
@@ -579,9 +579,10 @@ function drawLabel(c,p){
 function drawHUD(c){
   c.save();c.fillStyle='rgba(58,34,14,.92)';c.fillRect(0,0,W,TOPBAR);c.fillStyle='#e0a53c';c.fillRect(0,TOPBAR-2,W,2);
   const s=teamSums();c.textBaseline='middle';
+  const hudScores=shownScores();/*SCORE_MODE*/
   [0,1].forEach(t=>{const tm=TEAM[t],L=t===0;const bx=L?30:W-30;
     c.fillStyle=tm.c;circle(c,bx,22,17);c.fill();c.strokeStyle='#fff';c.lineWidth=2;c.stroke();
-    c.fillStyle='#fff';c.font=`bold 20px ${FONT}`;c.textAlign='center';c.fillText(G.points[t],bx,23);
+    c.fillStyle='#fff';c.font=`bold ${isTotal()&&hudScores[t]>=10000?15:20}px ${FONT}`;c.textAlign='center';c.fillText(isTotal()?fmt(hudScores[t]):hudScores[t],bx,23);/*SCORE_MODE*/
     c.textAlign=L?'left':'right';const tx=L?56:W-56;
     c.font=`bold 15px ${FONT}`;c.fillStyle=t?'#bcd4ff':'#ffc2c2';c.fillText(tm.name,tx,14);
     c.font=`bold 17px ${FONT}`;c.fillStyle='#fff3c4';c.fillText('本轮 '+fmt(s[t]),tx,32);});
@@ -686,6 +687,10 @@ let G = {
 const KEYS = { '1v1': KEYS1, '2v2': KEYS2 };
 let prevSnap = null, currSnap = null, prevAt = 0, currAt = 0;
 let lastUIPhase = '', lastUIRound = -1, reconnected = false;
+/* 计分模式辅助：drawHUD/结算页共用（与 game-core 同规则） */
+function isTotal() { return !!(currSnap && currSnap.scoreMode === 'total'); }
+function grandTotals() { const s = [0, 0]; (currSnap && currSnap.players || []).forEach(p => { s[p.team] += (p.roundValues || []).reduce((a, b) => a + b, 0) + p.cur; }); return s; }
+function shownScores() { return isTotal() ? grandTotals() : (currSnap ? currSnap.points : [0, 0]); }
 
 /* ---------------- 覆盖：ov 显隐（原版也有，这里保证存在） ---------------- */
 function showOv(html) { ov.innerHTML = html; ov.classList.add('show'); }
@@ -736,6 +741,7 @@ function onRoom(m) {
     if (m.cfg.rounds) CONFIG.rounds = m.cfg.rounds;
     if (m.cfg.roundTime) CONFIG.roundTime = m.cfg.roundTime;
     if (typeof m.cfg.seed === 'string') CONFIG.seed = m.cfg.seed;
+    if (['round', 'total'].includes(m.cfg.scoreMode)) CONFIG.scoreMode = m.cfg.scoreMode;
   }
   const rc = $('#roomCode'); if (rc) rc.textContent = m.code; // 大厅页可能还没有 netbar 元素
   if (!m.started) {
@@ -861,7 +867,7 @@ function lerpSnap(a, b, alpha) {
   return out;
 }
 function hydrate(s) {
-  G.phase = s.phase; G.round = s.round; G.cfg = { rounds: s.rounds, mode: s.mode, seed: '', counts: s.counts || {}, early: false, roundTime: s.roundTime };
+  G.phase = s.phase; G.round = s.round; G.cfg = { rounds: s.rounds, mode: s.mode, seed: '', counts: s.counts || {}, early: false, roundTime: s.roundTime, scoreMode: s.scoreMode || 'round' };
   G.seedId = s.seedId; G.timeLeft = s.timeLeft; G.countdown = s.countdown;
   G.points = s.points; G.history = s.history; G.clearEarly = s.clearEarly;
   G.matchWinner = s.matchWinner; G.shake = s.shake; G.goFlash = s.goFlash;
@@ -938,6 +944,10 @@ function renderLobbyOrRoom(m) {
       <div class="row"><label>对局模式</label><div class="seg" id="segMode">
         <button data-k="mode" data-v="1v1" class="${CONFIG.mode === '1v1' ? 'on' : ''}">1v1</button>
         <button data-k="mode" data-v="2v2" class="${CONFIG.mode === '2v2' ? 'on' : ''}">2v2</button></div></div>
+      <div class="row"><label>计分模式</label><div class="seg" id="segScoreMode">
+        <button data-k="scoreMode" data-v="round" class="${CONFIG.scoreMode !== 'total' ? 'on' : ''}">回合模式</button>
+        <button data-k="scoreMode" data-v="total" class="${CONFIG.scoreMode === 'total' ? 'on' : ''}">总分模式</button></div></div>
+      <div class="center dim" style="margin:-4px 0 6px;font-size:12px">回合模式：每轮胜方 +1 分 · 总分模式：打满全部轮次直接比物资总价值</div>
       <div class="row"><label>轮数</label><div class="seg" id="segRounds">
         ${[5, 7, 9, 11, 13, 15].map(v => `<button data-k="rounds" data-v="${v}" class="${CONFIG.rounds === v ? 'on' : ''}">${v}</button>`).join('')}</div></div>
       <div class="row"><label>每轮时长</label><div class="seg" id="segTime">
@@ -1016,7 +1026,9 @@ function renderResultUI() {
   const last = s.history[s.history.length - 1] || { sums: [0, 0], winner: -1 };
   const w = last.winner;
   const over = s.round >= s.rounds;
-  const verdict = w < 0 ? '本轮平局，双方都不得分' : `<b style="color:${TEAM[w].c}">${TEAM[w].name}</b> 赢下本轮，+1 分`;
+  const verdict = isTotal()
+    ? `<b style="color:${TEAM[w < 0 ? 0 : w].c}">${TEAM[w < 0 ? 0 : w].name}</b> 本轮物资价值领先 · 全场总分累计比较`
+    : (w < 0 ? '本轮平局，双方都不得分' : `<b style="color:${TEAM[w].c}">${TEAM[w].name}</b> 赢下本轮，+1 分`);
   const col = t => `<div class="rr-team t${t} ${w === t ? 'win' : ''}">
     <div class="rr-head"><span>${TEAM[t].name}</span><b>${fmt(last.sums[t])}</b></div>
     ${s.players.filter(p => p.team === t).map(p => `<div class="rr-p"><span>${esc(p.name)}</span><span>本轮 <b>${fmt(p.cur)}</b></span><span class="dim">钱包 ${fmt(p.wallet)}</span></div>`).join('')}</div>`;
@@ -1029,8 +1041,8 @@ function renderResultUI() {
     ${s.clearEarly ? `<div class="center dim" style="margin:-6px 0 8px">矿区已清空，提前 ${s.clearEarly} 秒结束</div>` : ''}
     <div class="rr">${col(0)}<div class="vs">VS</div>${col(1)}</div>
     <div class="verdict">${verdict}</div>
-    <div class="score"><span style="color:${TEAM[0].c}">红队</span><b style="color:${TEAM[0].c}">${s.points[0]}</b>:<b style="color:${TEAM[1].c}">${s.points[1]}</b><span style="color:${TEAM[1].c}">蓝队</span></div>
-    ${pips}${bar}
+    <div class="score"><span style="color:${TEAM[0].c}">红队</span><b style="color:${TEAM[0].c}">${isTotal() ? fmt(shownScores()[0]) : s.points[0]}</b>:<b style="color:${TEAM[1].c}">${isTotal() ? fmt(shownScores()[1]) : s.points[1]}</b><span style="color:${TEAM[1].c}">蓝队</span> <span class="dim" style="font-size:13px">${isTotal() ? '累计总分' : '比分'}</span></div>
+    ${isTotal() ? '' : pips}${bar}
     ${netBar()}
   </div>`);
   if ($('#rNext')) $('#rNext').onclick = () => flow(over ? PROTO.FLOW.TO_FINAL : PROTO.FLOW.TO_SHOP);
@@ -1048,7 +1060,7 @@ function renderShopUI() {
   ).join('');
   showOv(`<div class="shop-hud">
     <div class="sh-sign"><b>杂货铺</b><span>下一关 ${s.round + 1} / ${s.rounds}</span></div>
-    <div class="sh-score"><b style="color:#e5484d">红队 ${s.points[0]}</b><span> : </span><b style="color:#3b82f6">${s.points[1]} 蓝队</b></div>
+    <div class="sh-score"><b style="color:#e5484d">红队 ${isTotal() ? fmt(shownScores()[0]) : s.points[0]}</b><span> : </span><b style="color:#3b82f6">${isTotal() ? fmt(shownScores()[1]) : s.points[1]} 蓝队</b></div>
     <div class="sh-timer" id="shTimer">${Math.max(0, Math.ceil(sh.timeLeft))}</div>
     <div class="sh-tip">同时出钩 · 钩到即购买 · 道具下一轮生效</div>
     <div class="sh-bottom">
@@ -1090,9 +1102,12 @@ function renderFinalUI() {
   let bar = NET.isHost
     ? `<div class="btns"><button class="primary" id="fAgain">再来一局</button><button class="btn" id="fBack">返回大厅</button></div>`
     : `<div class="center dim">等待房主操作…</div>`;
+  const fs = isTotal() ? [fmt(tot[0]), fmt(tot[1])] : [pts[0], pts[1]];
+  const modeTag = `<div class="dim" style="font-size:13px">计分模式：${isTotal() ? '总分模式（全场物资总价值直接比较）' : '回合模式（每轮胜方 +1 分）'}</div>`;
   showOv(`<div class="panel final" style="width:640px">${banner}
-    <div class="score"><span style="color:${TEAM[0].c}">红队</span><b style="color:${TEAM[0].c}">${pts[0]}</b>:<b style="color:${TEAM[1].c}">${pts[1]}</b><span style="color:${TEAM[1].c}">蓝队</span>
-    ${w >= 0 && pts[0] === pts[1] ? `<div class="dim" style="font-size:13px">比分持平，按全场物资总价值判定</div>` : ''}</div>
+    <div class="score"><span style="color:${TEAM[0].c}">红队</span><b style="color:${TEAM[0].c}">${fs[0]}</b>:<b style="color:${TEAM[1].c}">${fs[1]}</b><span style="color:${TEAM[1].c}">蓝队</span>
+    ${modeTag}
+    ${!isTotal() && w >= 0 && pts[0] === pts[1] ? `<div class="dim" style="font-size:13px">比分持平，按全场物资总价值判定</div>` : ''}</div>
     ${netBar()}
     <table class="tbl">${head}${body}</table>${bar}
   </div>`);
