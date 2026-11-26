@@ -57,6 +57,16 @@
   const ITEM_TYPES = ['gold_s', 'gold_m', 'gold_l', 'gold_xl', 'diamond',
     'rock_s', 'rock_l', 'bone', 'skull', 'bag', 'mouse', 'pig', 'tnt'];
   const QTY_LEVELS = ['none', 'few', 'normal', 'many'];
+  /* 特殊关卡：每轮按总触发率掷出，命中后用关卡专属物品池覆盖默认矿区 */
+  const SPECIALS = [
+    { id: 'pigHunt',     name: '抓猪大队',   desc: '满屏会跑的猪和钻石猪，拼的就是预判与手速',   pool: ['mouse', 'pig'] },
+    { id: 'goldRush',    name: '纯金时代',   desc: '只有金块，重温最纯粹的淘金快感',             pool: ['gold_s', 'gold_m', 'gold_l', 'gold_xl'] },
+    { id: 'diamondStorm',name: '钻石风暴',   desc: '钻石与巨型金块满场，一夜暴富或一无所获',     pool: ['diamond', 'gold_xl'] },
+    { id: 'noBomb',      name: '炸药禁令',   desc: '全场没有 TNT，物品更密集，纯拼钩爪路线规划', pool: null, dense: true },
+    { id: 'blindBox',    name: '神秘盲盒',   desc: '全是神秘袋，开什么全看手气',                 pool: ['bag'] },
+    { id: 'ratPlague',   name: '鼠患危机',   desc: '老鼠乱窜、TNT 密布、神秘袋混杂，最混乱一局', pool: ['mouse', 'tnt', 'bag'] }
+  ];
+  const SPECIAL_RATE = 0.5; // 特殊关卡整体触发率
   const DEFAULT_CFG = {
     mode: '1v1', rounds: 7, roundTime: 60, early: false, seed: '', counts: {}, scoreMode: 'round',
     red: [{ name: '红1', ctrl: 'human' }, { name: '红2', ctrl: 'ai-normal' }],
@@ -93,7 +103,8 @@
         phase: 'setup', round: 0, players: [], items: [], time: 0,
         points: [0, 0], history: [], timeLeft: 0, countdown: 0,
         shake: 0, banner: null, goFlash: 0, emptyT: 0, seedId: '',
-        clearEarly: 0, cfg: this.cfg, shop: null, matchWinner: -2
+        clearEarly: 0, cfg: this.cfg, shop: null, matchWinner: -2,
+        special: null  // 本轮特殊关卡 {id,name,desc}，普通轮次为 null
       };
     }
 
@@ -203,28 +214,56 @@
       }
       return base;
     }
+    /* 特殊关卡专属数量表：无视玩家档位、池外不生成、走种子流可复现 */
+    specialCounts(id, R) {
+      const ri = (a, b) => this.sri(a, b);
+      switch (id) {
+        case 'pigHunt': return { mouse: 4 + ri(0, 2), pig: 3 + ri(0, 2) };
+        case 'goldRush': return { gold_s: 3, gold_m: 3, gold_l: 2, gold_xl: 1 + (this.SR() < .5 ? 1 : 0) };
+        case 'diamondStorm': return { diamond: 6 + ri(0, 2), gold_xl: 2 + ri(0, 1) };
+        case 'blindBox': return { bag: 10 + ri(0, 4) };
+        case 'ratPlague': return { mouse: 4 + ri(0, 1), tnt: 3, bag: 4 + ri(0, 1) };
+        case 'noBomb': { // 默认矿区去掉 TNT，密度 ×1.35
+          const base = {
+            gold_s: 2 + ri(0, 1), gold_m: 2, gold_l: 1 + (R >= 2 && this.SR() < .5 ? 1 : 0),
+            gold_xl: this.SR() < .3 + R * .06 ? 1 : 0,
+            diamond: (this.SR() < .65 ? 1 : 0) + (R >= 3 ? ri(0, 1) : 0),
+            rock_s: 2 + ri(0, 1), rock_l: 1 + ri(0, 1), bone: ri(0, 1), skull: ri(0, 1),
+            bag: 1 + ri(0, 1), mouse: ri(0, 1), pig: R >= 1 && this.SR() < .45 ? 1 : 0
+          };
+          const out = {}; Object.keys(base).forEach(t => { out[t] = Math.round(base[t] * 1.35); }); return out;
+        }
+      }
+      return {};
+    }
     genField(round, n) {
       const k = n > 2 ? 1.45 : 1, R = round;
-      const plan = [
-        ['gold_s', 2 + this.sri(0, 1)], ['gold_m', 2],
-        ['gold_l', 1 + (R >= 2 && this.SR() < .5 ? 1 : 0)],
-        ['gold_xl', this.SR() < .3 + R * .06 ? 1 : 0],
-        ['diamond', (this.SR() < .65 ? 1 : 0) + (R >= 3 ? this.sri(0, 1) : 0)],
-        ['rock_s', 2 + this.sri(0, 1)], ['rock_l', 1 + this.sri(0, 1)],
-        ['bone', this.sri(0, 1)], ['skull', this.sri(0, 1)],
-        ['bag', 1 + this.sri(0, 1)], ['mouse', this.sri(0, 1)],
-        ['pig', R >= 1 && this.SR() < .45 ? 1 : 0],
-        ['tnt', R >= 1 ? this.sri(0, 1) + (R >= 4 ? 1 : 0) : 0]
-      ];
-      const allowed = ITEM_TYPES.filter(t => this.qtyLevel(t) !== 'none');
-      const finalCounts = {}; let displaced = 0;
-      plan.forEach(([t, c]) => {
-        if (this.qtyLevel(t) === 'none') { displaced += c; return; }
-        finalCounts[t] = this.applyQty(t, c, R);
-      });
-      for (let i = 0; i < displaced && allowed.length; i++) {
-        const rep = allowed[Math.floor(this.SR() * allowed.length)];
-        finalCounts[rep] = (finalCounts[rep] || 0) + 1;
+      let finalCounts;
+      const sp = this.G.special;
+      if (sp) {
+        finalCounts = this.specialCounts(sp.id, R);
+      } else {
+        const plan = [
+          ['gold_s', 2 + this.sri(0, 1)], ['gold_m', 2],
+          ['gold_l', 1 + (R >= 2 && this.SR() < .5 ? 1 : 0)],
+          ['gold_xl', this.SR() < .3 + R * .06 ? 1 : 0],
+          ['diamond', (this.SR() < .65 ? 1 : 0) + (R >= 3 ? this.sri(0, 1) : 0)],
+          ['rock_s', 2 + this.sri(0, 1)], ['rock_l', 1 + this.sri(0, 1)],
+          ['bone', this.sri(0, 1)], ['skull', this.sri(0, 1)],
+          ['bag', 1 + this.sri(0, 1)], ['mouse', this.sri(0, 1)],
+          ['pig', R >= 1 && this.SR() < .45 ? 1 : 0],
+          ['tnt', R >= 1 ? this.sri(0, 1) + (R >= 4 ? 1 : 0) : 0]
+        ];
+        const allowed = ITEM_TYPES.filter(t => this.qtyLevel(t) !== 'none');
+        finalCounts = {}; let displaced = 0;
+        plan.forEach(([t, c]) => {
+          if (this.qtyLevel(t) === 'none') { displaced += c; return; }
+          finalCounts[t] = this.applyQty(t, c, R);
+        });
+        for (let i = 0; i < displaced && allowed.length; i++) {
+          const rep = allowed[Math.floor(this.SR() * allowed.length)];
+          finalCounts[rep] = (finalCounts[rep] || 0) + 1;
+        }
       }
       const counts = Object.keys(finalCounts).map(t => [t, Math.round(finalCounts[t] * k)])
         .filter(([t, c]) => c > 0).sort((a, b) => DEF[b[0]].r - DEF[a[0]].r);
@@ -492,10 +531,20 @@
       this.startRound();
       return G.seedId;
     }
+    rollSpecial() {
+      // 用本轮种子流掷，保证同种子同关卡可复现；消费随机数后再 genField 也一致复现
+      if (this.SR() < SPECIAL_RATE) {
+        const sp = SPECIALS[Math.floor(this.SR() * SPECIALS.length)];
+        this.G.special = { id: sp.id, name: sp.name, desc: sp.desc };
+      } else {
+        this.G.special = null;
+      }
+    }
     startRound() {
       const G = this.G;
       G.round++;
       this.setSeedForRound(G.seedId, G.round - 1);
+      this.rollSpecial();
       G.items = this.genField(G.round - 1, G.players.length);
       G.sticks = []; G.banner = null; G.emptyT = 0; G.shake = 0;
       G.players.forEach(p => { p.buffs = p.nextBuffs; p.nextBuffs = {}; p.strength = 1; p.cur = 0; });
@@ -609,6 +658,7 @@
         phase: G.phase, round: G.round, rounds: this.cfg.rounds, mode: this.cfg.mode,
         scoreMode: this.cfg.scoreMode || 'round',
         seedId: G.seedId, timeLeft: G.timeLeft, countdown: G.countdown,
+        special: G.special ? { id: G.special.id, name: G.special.name, desc: G.special.desc } : null,
         points: G.points.slice(), history: clone(G.history),
         clearEarly: G.clearEarly, matchWinner: G.matchWinner,
         banner: G.banner ? { text: G.banner.text, t: G.banner.t } : null,
@@ -640,7 +690,7 @@
 
   return {
     GameCore, W, H, GROUND, TOPBAR, DEF, SHOP, AI_CFG, TEAM,
-    ITEM_TYPES, QTY_LEVELS, DEFAULT_CFG, KEYS1, KEYS2,
+    ITEM_TYPES, QTY_LEVELS, DEFAULT_CFG, KEYS1, KEYS2, SPECIALS, SPECIAL_RATE,
     MAXA, SWING_SPEED, EXT_SPEED, PULL_BASE, RET_EMPTY, MAX_LEN, SHOW_TIME, L0, HOOK_R, POWER_MUL
   };
 });

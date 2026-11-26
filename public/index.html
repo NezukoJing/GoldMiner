@@ -703,7 +703,7 @@ let G = {
   phase: 'setup', demo: false, players: [], items: [], fx: [], parts: [], floats: [],
   sticks: [], time: 0, round: 0, points: [0, 0], history: [], timeLeft: 0,
   countdown: 0, paused: false, shake: 0, banner: null, goFlash: 0,
-  cfg: { rounds: 7, mode: '1v1' }, seedId: '', clearEarly: 0, matchWinner: -2, shop: null
+  cfg: { rounds: 7, mode: '1v1' }, seedId: '', clearEarly: 0, matchWinner: -2, shop: null, special: null
 };
 // 联机：每位玩家都在自己的电脑上操作自己的矿工，统一 S 出钩 / W 炸药（不再按座位分键位）
 const SOLO_KEYS = { fire: 'KeyS', bomb: 'KeyW' };
@@ -912,6 +912,7 @@ function hydrate(s) {
   G.points = s.points; G.history = s.history; G.clearEarly = s.clearEarly;
   G.matchWinner = s.matchWinner; G.shake = s.shake; G.goFlash = s.goFlash;
   G.banner = s.banner; G.time = s.time; G.shop = s.shop; G.demo = false;
+  G.special = s.special || null;
   if (s.round !== lastUIRound) {
     lastUIRound = s.round;
     G.fx = []; G.parts = []; G.floats = [];
@@ -1309,6 +1310,25 @@ addEventListener('keydown', e => {
   }
 });
 
+/* ---------------- 特殊关卡开场横幅（仅联机，倒计时阶段画在主场景之上） ---------------- */
+function drawSpecialBanner() {
+  if (!G.special || G.phase !== 'countdown') return;
+  const c = ctx, sp = G.special, bw = 720, bh = 150, bx = (W - bw) / 2, by = 176;
+  c.save();
+  c.fillStyle = 'rgba(38,20,7,.9)'; rr(c, bx, by, bw, bh, 18); c.fill();
+  c.strokeStyle = '#e8b14a'; c.lineWidth = 4; c.stroke();
+  c.strokeStyle = 'rgba(255,220,140,.35)'; c.lineWidth = 2;
+  rr(c, bx + 8, by + 8, bw - 16, bh - 16, 13); c.stroke();
+  c.textAlign = 'center'; c.textBaseline = 'middle';
+  c.fillStyle = '#ffd98a'; c.font = `bold 17px ${FONT}`;
+  c.fillText('★  特殊关卡  ★', W / 2, by + 32);
+  c.fillStyle = '#fff3c4'; c.font = `900 44px ${FONT}`;
+  c.lineWidth = 7; c.strokeStyle = '#5a3008'; c.strokeText(sp.name, W / 2, by + 74); c.fillText(sp.name, W / 2, by + 74);
+  c.fillStyle = '#e8d0a0'; c.font = `500 18px ${FONT}`;
+  c.fillText(sp.desc || '', W / 2, by + 116);
+  c.restore();
+}
+
 /* ---------------- 主循环（插值渲染） ---------------- */
 let last = 0;
 function frame(ts) {
@@ -1321,6 +1341,7 @@ function frame(ts) {
     hydrate(lerpSnap(prevSnap, currSnap, alpha));
   }
   render();
+  drawSpecialBanner();
   requestAnimationFrame(frame);
 }
 
