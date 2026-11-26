@@ -139,31 +139,35 @@ class Room {
   clearSwapFor(socketId) {
     if (this.pendingSwap && (this.pendingSwap.fromId === socketId || this.pendingSwap.toId === socketId)) this.pendingSwap = null;
   }
-  /* ---- 踢人：仅房主、未开局、非自己、目标有真人 ---- */
+  /* ---- 踢人：仅房主、未开局、非自己、目标座位有人（含掉线玩家） ---- */
   kickPlayer(socket, rawTarget) {
     if (this.started) { socket.emit(P.MSG.ERROR, { msg: '对局已开始，无法踢人' }); return; }
     if (!this.isHost(socket.id)) { socket.emit(P.MSG.ERROR, { msg: '仅房主可踢人' }); return; }
     const target = Number(rawTarget);
     const from = this.seatOf(socket.id);
-    if (!Number.isInteger(target) || target < 0 || target >= this.nSeats || target === from) return;
+    if (!Number.isInteger(target) || target < 0 || target >= this.nSeats) {
+      socket.emit(P.MSG.ERROR, { msg: '无效的座位' }); return;
+    }
+    if (target === from) { socket.emit(P.MSG.ERROR, { msg: '不能踢出自己' }); return; }
     const victim = this.seats[target];
-    if (!victim || !victim.connected) return; // 空座或断线座不踢（断线由 AI 托管/自然掉线处理）
+    // 空座（从未有人）不允许踢；但掉线但座位上仍挂着的玩家允许房主清除
+    if (!victim) { socket.emit(P.MSG.ERROR, { msg: '该座位是空的' }); return; }
     // 清掉可能涉及的换座申请
     this.clearSwapFor(victim.id);
-    // 通知被踢者
+    // 通知被踢者：在线才发 KICKED 并强制退房间；掉线的 socket 已不在，直接清座位
     const victimSock = io.sockets.sockets.get(victim.id);
-    if (victimSock) {
+    if (victimSock && victimSock.connected) {
       victimSock.emit(P.MSG.KICKED, { by: this.seats[from] ? this.seats[from].name : '房主' });
       victimSock.leave(this.code);
       victimSock.data.room = null;
       victimSock.data.seat = undefined;
     }
-    // 从座位移除
+    // 从座位移除（无论在线/掉线，都真正空出座位）
     const victimName = victim.name;
     this.seats[target] = null;
     this.tell(socket.id, `已将 ${victimName} 移出房间`);
     this.sendRoomAll();
-    console.log(`[房间] ${this.code} 房主踢出座位${target} ${victimName}`);
+    console.log(`[房间] ${this.code} 房主踢出座位${target} ${victimName}${victim.connected ? '' : '(掉线)'}`);
   }
   roomMsg(socketId) {
     return {
