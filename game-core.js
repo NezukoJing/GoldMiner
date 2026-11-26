@@ -594,7 +594,7 @@
       G.phase = 'shop';
       const offers = this.genOffers(8);
       const n = offers.length, xMin = 130, xMax = W - 130;
-      const goods = offers.map((o, i) => this.makeShopItem(o, n === 1 ? W / 2 : xMin + i * (xMax - xMin) / (n - 1), 344));
+      const goods = offers.map((o, i) => this.makeShopItem(o, n === 1 ? W / 2 : xMin + i * (xMax - xMin) / (n - 1), 354)); /*SHOP_LABEL_DESC*/
       G.items = goods;                       // 柜台上的商品直接作为可抓物品
       G.shop = { offers, log: {}, timeLeft: 20, done: false, endT: 0, ended: false };
       G.players.forEach(p => { this.resetHook(p); });

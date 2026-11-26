@@ -208,11 +208,11 @@ const DEF={
   tnt:{n:'TNT',r:18,v:0,w:1}
 };
 const SHOP={
-  dynamite:{n:'炸药',d:'炸药库存 +1，抓错东西时可以炸掉',p:[40,120],wt:3},
-  power:{n:'力量药水',d:'下一轮拉回速度 ×1.5',p:[120,380],wt:2},
-  luck:{n:'幸运草',d:'下一轮神秘袋开出力量/炸药的概率翻倍',p:[60,220],wt:1.6},
-  rock:{n:'石头收藏书',d:'下一轮石头价值 ×3',p:[20,90],wt:1.1},
-  polish:{n:'钻石抛光剂',d:'下一轮钻石价值 ×1.5',p:[180,450],wt:1.5}
+  dynamite:{n:'炸药',d:'炸药库存 +1，抓错东西时可以炸掉',sd:'炸掉抓错的物品',p:[40,120],wt:3},
+  power:{n:'力量药水',d:'下一轮拉回速度 ×1.5',sd:'下轮拉回速度×1.5',p:[120,380],wt:2},
+  luck:{n:'幸运草',d:'下一轮神秘袋开出力量/炸药的概率翻倍',sd:'下轮神秘袋概率翻倍',p:[60,220],wt:1.6},
+  rock:{n:'石头收藏书',d:'下一轮石头价值 ×3',sd:'下轮石头价值×3',p:[20,90],wt:1.1},
+  polish:{n:'钻石抛光剂',d:'下一轮钻石价值 ×1.5',sd:'下轮钻石价值×1.5',p:[180,450],wt:1.5}
 };
 const BUFF_BADGE={power:['力','#e5484d'],luck:['运','#22a559'],rock:['石','#8a8178'],polish:['钻','#2b9be0']};
 const AI_CFG={
@@ -628,11 +628,12 @@ function render(){
   if(G.phase==='shop')drawShopBackdrop(c);
   else if(BG)c.drawImage(BG,0,0,W,H);
   for(const it of G.items)if(!it.taken&&!it.gone)drawItem(c,it);
-  if(G.phase==='shop')for(const it of G.items){if(!it.offer)continue;const sold=it.offer.soldTo!==null;
+  if(G.phase==='shop')for(const it of G.items){if(!it.offer)continue;const sold=it.offer.soldTo!==null,def=SHOP[it.offer.type];
     c.save();c.textAlign='center';c.textBaseline='middle';
-    c.fillStyle='rgba(28,14,5,.86)';rr(c,it.x-52,it.y+46,104,40,7);c.fill();c.strokeStyle='#7a4e28';c.lineWidth=2;c.stroke();
-    c.fillStyle=sold?'#9a8166':'#ffcf4a';c.font=`900 18px ${FONT}`;c.fillText('$'+fmt(it.offer.price).slice(1),it.x,it.y+58);
-    c.fillStyle=sold?'#7a6a58':'#f0dcb4';c.font=`600 12px ${FONT}`;c.fillText(SHOP[it.offer.type].n,it.x,it.y+77);c.restore();}
+    c.fillStyle='rgba(28,14,5,.88)';rr(c,it.x-56,it.y+46,112,58,7);c.fill();c.strokeStyle='#7a4e28';c.lineWidth=2;c.stroke();
+    c.fillStyle=sold?'#9a8166':'#ffcf4a';c.font=`900 18px ${FONT}`;c.fillText('$'+fmt(it.offer.price).slice(1),it.x,it.y+62);
+    c.fillStyle=sold?'#7a6a58':'#f0dcb4';c.font=`700 12px ${FONT}`;c.fillText(def.n,it.x,it.y+80);
+    c.fillStyle=sold?'#6b5c4c':'#c9b48c';c.font=`500 10px ${FONT}`;c.fillText(def.sd||'',it.x,it.y+96);c.restore();}/*SHOP_LABEL_DESC*/
   for(const p of G.players)drawMiner(c,p);
   if(G.phase==='shop')for(const p of G.players)drawShopTag(c,p);/*SHOP_PLAYER_TAG*/
   for(const p of G.players)drawRope(c,p);
