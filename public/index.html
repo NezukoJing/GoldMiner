@@ -580,6 +580,18 @@ function drawLabel(c,p){
   c.fillText(p.isAI?'电脑·'+AI_CFG[p.lvl].n:`${KEYNAME[p.keys.fire]}出钩 ${KEYNAME[p.keys.bomb]}炸药`,x+w-9,y+28);
   c.restore();
 }
+/* 商店阶段：把每个玩家的名字和剩余金钱画在其矿工正下方 */
+function drawShopTag(c,p){
+  const tm=TEAM[p.team],w=148,h=42,x=p.x-w/2,y=GROUND+12;
+  c.save();
+  c.fillStyle='rgba(28,15,6,.9)';rr(c,x,y,w,h,9);c.fill();
+  c.strokeStyle=tm.c;c.lineWidth=2.5;c.stroke();
+  c.fillStyle=tm.c;rr(c,x,y,6,h,4);c.fill();
+  c.textBaseline='middle';c.textAlign='center';
+  c.font=`bold 14px ${FONT}`;c.fillStyle='#fff3d0';c.fillText(p.name,p.x,y+13);
+  c.font=`bold 14px ${FONT}`;c.fillStyle='#ffcf4a';c.fillText('余额 '+fmt(p.wallet),p.x,y+29);
+  c.restore();
+}
 function drawHUD(c){
   c.save();c.fillStyle='rgba(58,34,14,.92)';c.fillRect(0,0,W,TOPBAR);c.fillStyle='#e0a53c';c.fillRect(0,TOPBAR-2,W,2);
   const s=teamSums();c.textBaseline='middle';
@@ -622,6 +634,7 @@ function render(){
     c.fillStyle=sold?'#9a8166':'#ffcf4a';c.font=`900 18px ${FONT}`;c.fillText('$'+fmt(it.offer.price).slice(1),it.x,it.y+58);
     c.fillStyle=sold?'#7a6a58':'#f0dcb4';c.font=`600 12px ${FONT}`;c.fillText(SHOP[it.offer.type].n,it.x,it.y+77);c.restore();}
   for(const p of G.players)drawMiner(c,p);
+  if(G.phase==='shop')for(const p of G.players)drawShopTag(c,p);/*SHOP_PLAYER_TAG*/
   for(const p of G.players)drawRope(c,p);
   for(const p of G.players)if(p.hook.item)drawItem(c,p.hook.item);
   for(const p of G.players)drawClaw(c,p);
