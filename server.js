@@ -139,6 +139,32 @@ class Room {
   clearSwapFor(socketId) {
     if (this.pendingSwap && (this.pendingSwap.fromId === socketId || this.pendingSwap.toId === socketId)) this.pendingSwap = null;
   }
+  /* ---- 踢人：仅房主、未开局、非自己、目标有真人 ---- */
+  kickPlayer(socket, rawTarget) {
+    if (this.started) { socket.emit(P.MSG.ERROR, { msg: '对局已开始，无法踢人' }); return; }
+    if (!this.isHost(socket.id)) { socket.emit(P.MSG.ERROR, { msg: '仅房主可踢人' }); return; }
+    const target = Number(rawTarget);
+    const from = this.seatOf(socket.id);
+    if (!Number.isInteger(target) || target < 0 || target >= this.nSeats || target === from) return;
+    const victim = this.seats[target];
+    if (!victim || !victim.connected) return; // 空座或断线座不踢（断线由 AI 托管/自然掉线处理）
+    // 清掉可能涉及的换座申请
+    this.clearSwapFor(victim.id);
+    // 通知被踢者
+    const victimSock = io.sockets.sockets.get(victim.id);
+    if (victimSock) {
+      victimSock.emit(P.MSG.KICKED, { by: this.seats[from] ? this.seats[from].name : '房主' });
+      victimSock.leave(this.code);
+      victimSock.data.room = null;
+      victimSock.data.seat = undefined;
+    }
+    // 从座位移除
+    const victimName = victim.name;
+    this.seats[target] = null;
+    this.tell(socket.id, `已将 ${victimName} 移出房间`);
+    this.sendRoomAll();
+    console.log(`[房间] ${this.code} 房主踢出座位${target} ${victimName}`);
+  }
   roomMsg(socketId) {
     return {
       code: this.code, seat: this.seatOf(socketId), isHost: this.isHost(socketId),
@@ -357,6 +383,10 @@ io.on('connection', socket => {
   socket.on(P.MSG.SWAP_CANCEL, () => {
     const r = rooms.get(socket.data.room);
     if (r) r.cancelSwap(socket.id);
+  });
+  socket.on(P.MSG.KICK, msg => {
+    const r = rooms.get(socket.data.room);
+    if (r) r.kickPlayer(socket, msg && msg.target);
   });
   socket.on(P.MSG.INPUT, msg => { const r = rooms.get(socket.data.room); if (r) r.onInput(socket, msg || {}); });
   socket.on(P.MSG.FLOW, msg => { const r = rooms.get(socket.data.room); if (r) r.onFlow(socket, msg || {}); });

@@ -17,6 +17,7 @@
     SWAP_REQ: 'swapReq',    // {target} 请求换座（空座直接移动，有人座发申请）
     SWAP_ANS: 'swapAns',    // {accept} 被申请方应答换座请求
     SWAP_CANCEL: 'swapCancel', // 发起方撤回换座申请
+    KICK: 'kick',           // {target} 房主踢人（target 为座位号），仅未开局有效
     PING: 'ping',
     // 服务器 -> 客户端
     ROOM: 'room',           // {code, seat, isHost, players[], cfg, phase}
@@ -24,6 +25,7 @@
     STATE: 'state',         // 权威快照（见 game-core.serialize）
     SWAP_OFFER: 'swapOffer', // {from, name, target} 有人请求与你换座
     SWAP_DECLINE: 'swapDecline', // 换座申请被拒绝/撤回
+    KICKED: 'kicked',       // 被房主踢出房间 {by}
     EVENT: 'event',         // 一次性事件 {kind, ...}（如 toast）
     ERROR: 'error',         // {msg}
     PONG: 'pong'

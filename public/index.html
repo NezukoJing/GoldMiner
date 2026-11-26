@@ -162,6 +162,8 @@ kbd{display:inline-block;min-width:20px;padding:1px 5px;border:1.5px solid #c9b1
 .seat.on{border-style:solid;border-color:#e0a53c;color:#6b4214;background:#fff6dd}
 .seat .host{color:#c07400;font-weight:bold}
 .seat .off{color:#c0392b}
+.kick-btn{float:right;background:#c0392b;color:#fff;font-size:11px;padding:1px 8px;border-radius:8px;margin-left:8px;cursor:pointer}
+.kick-btn:hover{background:#922b21}
 #toast{position:absolute;left:50%;top:60px;transform:translateX(-50%);background:rgba(60,34,14,.92);color:#ffe7a8;
   padding:10px 22px;border-radius:12px;font-size:15px;z-index:20;opacity:0;transition:.25s;pointer-events:none}
 #toast.show{opacity:1}
@@ -726,6 +728,7 @@ function connect() {
   s.on(PROTO.MSG.STATE, onState);
   s.on(PROTO.MSG.SWAP_OFFER, onSwapOffer);
   s.on(PROTO.MSG.SWAP_DECLINE, () => toast('对方拒绝了换座申请'));
+  s.on(PROTO.MSG.KICKED, onKicked);
   s.on(PROTO.MSG.EVENT, e => { if (e.kind === 'toast') toast(e.text); });
   s.on(PROTO.MSG.ERROR, e => toast('✗ ' + (e.msg || '出错了')));
   return s;
@@ -1007,8 +1010,42 @@ function onSwapOffer(msg) {
 }
 function closeSwapOffer() { const box = document.querySelector('#swapOfferBox'); if (box && box.parentNode) box.parentNode.removeChild(box); }
 
+/* ---- 踢人（仅房主，未开局） ---- */
+function onKick(i) {
+  if (NET.started || !NET.isHost) return;
+  const m = NET.roomView;
+  const p = m && m.players && m.players[i];
+  if (!p || p.host) { toast('不能踢出房主或空座位'); return; }
+  const who = esc(p.name || ('座位' + (i + 1)));
+  let box = document.querySelector('#kickBox');
+  if (box) box.remove();
+  box = document.createElement('div');
+  box.id = 'kickBox';
+  box.style.cssText = 'position:absolute;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;background:rgba(46,24,6,.45)';
+  box.innerHTML = `<div style="background:linear-gradient(#fffdf6,#fff4dc);border:3px solid #e0a53c;border-radius:18px;box-shadow:0 14px 40px rgba(50,25,0,.4);padding:24px 30px;color:#4a2c10;text-align:center;max-width:420px">
+    <div style="font-size:20px;font-weight:800;margin-bottom:10px">踢出玩家</div>
+    <div style="font-size:15px;margin-bottom:18px">确定要把 <b>${who}</b> 踢出房间吗？</div>
+    <div style="display:flex;gap:16px;justify-content:center">
+      <button id="kickYes" class="primary" style="padding:10px 28px;background:#c0392b;border-color:#922b21">确认踢出</button>
+      <button id="kickNo" class="btn" style="padding:10px 28px">取消</button>
+    </div></div>`;
+  document.body.appendChild(box);
+  const close = () => { if (box.parentNode) box.parentNode.removeChild(box); };
+  box.querySelector('#kickYes').onclick = () => { close(); emit(PROTO.MSG.KICK, { target: i }); };
+  box.querySelector('#kickNo').onclick = close;
+}
+function onKicked(msg) {
+  const host = esc((msg && msg.by) || '房主');
+  NET.room = null; NET.seat = -1; NET.isHost = false; NET.started = false;
+  NET.roomView = null; NET.hostName = '';
+  currSnap = null; prevSnap = null;
+  toast(`你已被 ${host} 踢出房间`);
+  renderLobby();
+}
+
 /* ---- 大厅 / 房间等待 ---- */
 function renderLobbyOrRoom(m) {
+  NET.roomView = m; // 供踢人弹窗读取玩家名
   // 保留滚动位置：调整档位会触发服务器回广播 ROOM 而重建面板，恢复滚动避免跳回顶部
   const prevPanel = ov.querySelector('.panel');
   const scrollTop = prevPanel ? prevPanel.scrollTop : 0;
@@ -1019,8 +1056,11 @@ function renderLobbyOrRoom(m) {
     const self = i === m.seat;
     const tip = self ? '你当前的座位' : (p ? `点击申请与 ${esc(p.name)} 换座` : `点击移动到座位 ${i + 1}`);
     const clickable = m.started ? '' : `onclick="onSeatClick(${i})" style="cursor:pointer"`;
+    // 房主未开局时，他人座位右侧显示踢人按钮（阻止冒泡，避免触发换座）
+    const kickBtn = (!m.started && m.isHost && p && !p.host && !self)
+      ? `<span class="kick-btn" title="踢出 ${esc(p.name)}" onclick="event.stopPropagation();onKick(${i})">踢出</span>` : '';
     return p
-      ? `<div class="seat on" title="${tip}" ${clickable}><b>${esc(p.name)}</b>${p.host ? ' <span class="host">房主</span>' : ''}${!p.connected ? ' <span class="off">离线</span>' : ''}${self ? ' <span class="dim" style="font-size:11px">（你）</span>' : ''}</div>`
+      ? `<div class="seat on" title="${tip}" ${clickable}><b>${esc(p.name)}</b>${p.host ? ' <span class="host">房主</span>' : ''}${!p.connected ? ' <span class="off">离线</span>' : ''}${self ? ' <span class="dim" style="font-size:11px">（你）</span>' : ''}${kickBtn}</div>`
       : `<div class="seat" title="${tip}" ${clickable}>座位 ${i + 1} · 空（电脑补位）</div>`;
   };
   const teamCol = (team, label) => {
