@@ -64,7 +64,8 @@
     { id: 'diamondStorm',name: '钻石风暴',   desc: '钻石与巨型金块满场，一夜暴富或一无所获',     pool: ['diamond', 'gold_xl'] },
     { id: 'noBomb',      name: '炸药禁令',   desc: '全场没有 TNT，物品更密集，纯拼钩爪路线规划', pool: null, dense: true },
     { id: 'blindBox',    name: '神秘盲盒',   desc: '全是神秘袋，开什么全看手气',                 pool: ['bag'] },
-    { id: 'ratPlague',   name: '鼠患危机',   desc: '老鼠乱窜、TNT 密布、神秘袋混杂，最混乱一局', pool: ['mouse', 'tnt', 'bag'] }
+    { id: 'ratPlague',   name: '鼠患危机',   desc: '老鼠乱窜、TNT 密布、神秘袋混杂，最混乱一局', pool: ['mouse', 'tnt', 'bag'] },
+    { id: 'deepDive',    name: '深度挖掘',   desc: '所有宝物深埋地底，没有小件杂矿，能挖多深全凭本事', pool: ['gold_m', 'gold_l', 'gold_xl', 'diamond', 'rock_l', 'bag', 'pig', 'tnt'], deep: true }
   ];
   const SPECIAL_RATE = 0.5; // 特殊关卡整体触发率
   const DEFAULT_CFG = {
@@ -184,7 +185,10 @@
       return it;
     }
     place(t, list, side) {
-      const d = DEF[t], [y0, y1] = this.yRange(t);
+      const d = DEF[t];
+      let [y0, y1] = this.yRange(t);
+      // 深度挖掘：所有物品强制深埋在矿区底层，无视各自默认深度
+      if (this.G.special && this.G.special.id === 'deepDive') { y0 = 480; y1 = 695; }
       const xMin = side === 'R' ? W / 2 + d.r + 8 : d.r + 16;
       const xMax = side === 'R' ? W - d.r - 16 : W / 2 - d.r - 8;
       for (let a = 0; a < 160; a++) {
@@ -223,6 +227,11 @@
         case 'diamondStorm': return { diamond: 6 + ri(0, 2), gold_xl: 2 + ri(0, 1) };
         case 'blindBox': return { bag: 10 + ri(0, 4) };
         case 'ratPlague': return { mouse: 4 + ri(0, 1), tnt: 3, bag: 4 + ri(0, 1) };
+        case 'deepDive': return { // 深层硬货：无骨头/骷髅/老鼠/小金块/小石头
+          gold_m: 2 + ri(0, 1), gold_l: 2 + ri(0, 1), gold_xl: 1 + (this.SR() < .5 ? 1 : 0),
+          diamond: 1 + ri(0, 2), rock_l: 1 + ri(0, 1), bag: 1 + ri(0, 1),
+          pig: R >= 1 && this.SR() < .4 ? 1 : 0, tnt: ri(0, 1)
+        };
         case 'noBomb': { // 默认矿区去掉 TNT，密度 ×1.35
           const base = {
             gold_s: 2 + ri(0, 1), gold_m: 2, gold_l: 1 + (R >= 2 && this.SR() < .5 ? 1 : 0),
